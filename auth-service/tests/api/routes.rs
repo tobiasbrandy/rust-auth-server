@@ -1,3 +1,4 @@
+use auth_service::api::SignupResponse;
 use serde_json::json;
 
 use crate::helpers::TestApp;
@@ -22,7 +23,19 @@ async fn signup() {
         "requires2FA": true
     })).send().await.unwrap();
 
-    assert_eq!(response.status().as_u16(), 200);
+    assert_eq!(response.status().as_u16(), 201);
+    
+    let expected_response = SignupResponse {
+        message: "User created successfully!".to_owned(),
+    };
+
+    assert_eq!(
+        response
+            .json::<SignupResponse>()
+            .await
+            .unwrap(),
+        expected_response
+    );
 }
 
 #[tokio::test]

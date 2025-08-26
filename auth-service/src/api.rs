@@ -1,27 +1,50 @@
-use axum::{http::StatusCode, response::IntoResponse, routing::post, Json, Router};
+use axum::{Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::post};
 use serde::{Deserialize, Serialize};
 
-pub fn api_router() -> Router {
+use crate::{app_state::AppState, domain::user::User};
+
+pub fn api_router(app_state: AppState) -> Router {
     Router::new()
         .route("/signup", post(signup))
         .route("/login", post(login))
         .route("/verify-2fa", post(verify_2fa))
         .route("/logout", post(logout))
         .route("/verify-token", post(verify_token))
+        .with_state(app_state)
 }
 
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Deserialize)]
 pub struct SignupRequest {
     pub email: String,
     pub password: String,
     #[serde(rename = "requires2FA")]
     pub requires_2fa: bool,
 }
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SignupResponse {
+    pub message: String,
+}
+async fn signup(
+    State(state): State<AppState>,
+    Json(body): Json<SignupRequest>,
+) -> impl IntoResponse {
+    let user = User {
+        email: body.email,
+        password: body.password,
+        requires_2fa: body.requires_2fa,
+    };
 
-async fn signup(body: Json<SignupRequest>) -> impl IntoResponse {
-    println!("signup request: {}", serde_json::to_string(&body.0).unwrap());
-    StatusCode::OK.into_response()
+    let mut user_store = state.user_store.write().await;
+
+    // For now, we just assert successful operation
+    let user = user_store.add_user(user).unwrap();
+
+    (
+        StatusCode::CREATED,
+        Json(SignupResponse {
+            message: format!("User {} created successfully!", user.email),
+        }),
+    )
 }
 
 async fn login() -> impl IntoResponse {
