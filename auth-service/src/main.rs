@@ -1,8 +1,8 @@
-use auth_service::Application;
+use auth_service::{app_state::AppState, services::hashmap_user_store::HashmapUserStore, Application};
 
 #[tokio::main]
 async fn main() {
-    let app = Application::build("0.0.0.0:3000", Default::default())
+    let app = Application::build("0.0.0.0:3000", AppState::new(HashmapUserStore::default()))
         .await
         .expect("Failed to build app");
 

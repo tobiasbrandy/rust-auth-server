@@ -1,7 +1,8 @@
-use axum::{Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::post};
+use axum::{extract::State, http::StatusCode, response::{IntoResponse, Response}, routing::post, Json, Router};
 use serde::{Deserialize, Serialize};
+use validator::Validate;
 
-use crate::{app_state::AppState, domain::user::User};
+use crate::{app_state::AppState, domain::{error::AuthAPIError, user::User}};
 
 pub fn api_router(app_state: AppState) -> Router {
     Router::new()
@@ -11,6 +12,26 @@ pub fn api_router(app_state: AppState) -> Router {
         .route("/logout", post(logout))
         .route("/verify-token", post(verify_token))
         .with_state(app_state)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ErrorResponse {
+    pub error: String,
+}
+impl IntoResponse for AuthAPIError {
+    fn into_response(self) -> Response {
+        let (status, error_message) = match self {
+            AuthAPIError::UserAlreadyExists => (StatusCode::CONFLICT, "User already exists"),
+            AuthAPIError::InvalidCredentials => (StatusCode::BAD_REQUEST, "Invalid credentials"),
+            AuthAPIError::UnexpectedError => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "Unexpected error")
+            }
+        };
+        let body = Json(ErrorResponse {
+            error: error_message.to_string(),
+        });
+        (status, body).into_response()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq, Deserialize)]
@@ -27,24 +48,25 @@ pub struct SignupResponse {
 async fn signup(
     State(state): State<AppState>,
     Json(body): Json<SignupRequest>,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse, AuthAPIError> {
     let user = User {
         email: body.email,
         password: body.password,
         requires_2fa: body.requires_2fa,
     };
+    user.validate().map_err(|_| AuthAPIError::InvalidCredentials)?;
 
     let mut user_store = state.user_store.write().await;
 
     // For now, we just assert successful operation
-    let user = user_store.add_user(user).unwrap();
+    let user = user_store.add_user(user).await.map_err(|_| AuthAPIError::UserAlreadyExists)?;
 
-    (
+    Ok((
         StatusCode::CREATED,
         Json(SignupResponse {
             message: format!("User {} created successfully!", user.email),
         }),
-    )
+    ))
 }
 
 async fn login() -> impl IntoResponse {

@@ -1,4 +1,4 @@
-use auth_service::Application;
+use auth_service::{app_state::AppState, services::hashmap_user_store::HashmapUserStore, Application};
 
 pub struct TestApp {
     pub address: String,
@@ -7,7 +7,7 @@ pub struct TestApp {
 
 impl TestApp {
     pub async fn new() -> Self {
-        let app = Application::build("127.0.0.1:0", Default::default())
+        let app = Application::build("127.0.0.1:0", AppState::new(HashmapUserStore::default()))
             .await
             .expect("Failed to build app");
 
