@@ -22,14 +22,11 @@ async fn signup() {
         "password": "password123",
         "requires2FA": true
     });
-    
+
     let response = app.post("/signup").json(&body).send().await.unwrap();
     assert_eq!(response.status().as_u16(), 201);
     assert_eq!(
-        response
-            .json::<SignupResponse>()
-            .await
-            .unwrap(),
+        response.json::<SignupResponse>().await.unwrap(),
         SignupResponse {
             message: "User test@example.com created successfully!".to_string(),
         }
@@ -39,7 +36,7 @@ async fn signup() {
 #[tokio::test]
 async fn signup_malformed_body() {
     let app = TestApp::new().await;
-    
+
     let body = json!({
         "password": "password123",
         "requires2FA": true
@@ -71,7 +68,7 @@ async fn signup_should_return_400_if_invalid_input() {
             "requires2FA": true
         }),
     ];
-    
+
     let app = TestApp::new().await;
 
     for input in invalid_inputs {
@@ -79,11 +76,7 @@ async fn signup_should_return_400_if_invalid_input() {
 
         assert_eq!(response.status().as_u16(), 400);
         assert_eq!(
-            response
-                .json::<ErrorResponse>()
-                .await
-                .unwrap()
-                .error,
+            response.json::<ErrorResponse>().await.unwrap().error,
             "Invalid credentials".to_string()
         );
     }
@@ -91,7 +84,7 @@ async fn signup_should_return_400_if_invalid_input() {
 
 #[tokio::test]
 async fn signup_should_return_409_if_email_already_exists() {
-    // Call the signup route twice. The second request should fail with a 409 HTTP status code   
+    // Call the signup route twice. The second request should fail with a 409 HTTP status code
     let app = TestApp::new().await;
 
     let body = json!({
@@ -106,11 +99,7 @@ async fn signup_should_return_409_if_email_already_exists() {
     let response = app.post("/signup").json(&body).send().await.unwrap();
     assert_eq!(response.status().as_u16(), 409);
     assert_eq!(
-        response
-            .json::<ErrorResponse>()
-            .await
-            .unwrap()
-            .error,
+        response.json::<ErrorResponse>().await.unwrap().error,
         "User already exists".to_owned()
     );
 }

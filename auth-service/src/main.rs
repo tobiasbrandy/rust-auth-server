@@ -1,4 +1,6 @@
-use auth_service::{app_state::AppState, services::hashmap_user_store::HashmapUserStore, Application};
+use auth_service::{
+    Application, app_state::AppState, services::hashmap_user_store::HashmapUserStore,
+};
 
 #[tokio::main]
 async fn main() {

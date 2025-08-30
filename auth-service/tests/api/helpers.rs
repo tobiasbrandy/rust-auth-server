@@ -1,4 +1,6 @@
-use auth_service::{app_state::AppState, services::hashmap_user_store::HashmapUserStore, Application};
+use auth_service::{
+    Application, app_state::AppState, services::hashmap_user_store::HashmapUserStore,
+};
 
 pub struct TestApp {
     pub address: String,
@@ -26,8 +28,7 @@ impl TestApp {
     }
 
     pub fn request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
-        self
-            .http_client
+        self.http_client
             .request(method, format!("{}{}", &self.address, path))
     }
 

@@ -2,10 +2,10 @@ use std::env;
 
 use askama::Template;
 use axum::{
+    Json, Router,
     http::StatusCode,
     response::{Html, IntoResponse},
     routing::get,
-    Json, Router,
 };
 use axum_extra::extract::CookieJar;
 use serde::Serialize;

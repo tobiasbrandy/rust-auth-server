@@ -2,7 +2,10 @@ use std::collections::{HashMap, hash_map::Entry};
 
 use async_trait::async_trait;
 
-use crate::domain::{data_stores::{UserStore, UserStoreError}, user::User};
+use crate::domain::{
+    data_stores::{UserStore, UserStoreError},
+    user::User,
+};
 
 #[derive(Debug, Clone, Default)]
 pub struct HashmapUserStore {
@@ -14,9 +17,7 @@ impl UserStore for HashmapUserStore {
     async fn add_user(&mut self, user: User) -> Result<&User, UserStoreError> {
         match self.users.entry(user.email.clone()) {
             Entry::Occupied(_) => Err(UserStoreError::UserAlreadyExists),
-            Entry::Vacant(entry) => {
-                Ok(entry.insert(user))
-            }
+            Entry::Vacant(entry) => Ok(entry.insert(user)),
         }
     }
 
@@ -54,7 +55,10 @@ mod tests {
             requires_2fa: false,
         };
         assert!(store.add_user(user.clone()).await.is_ok());
-        assert_eq!(store.add_user(user).await, Err(UserStoreError::UserAlreadyExists));
+        assert_eq!(
+            store.add_user(user).await,
+            Err(UserStoreError::UserAlreadyExists)
+        );
     }
 
     #[tokio::test]
@@ -67,7 +71,10 @@ mod tests {
         };
         assert!(store.add_user(user.clone()).await.is_ok());
         assert_eq!(store.get_user(&user.email).await, Ok(user));
-        assert_eq!(store.get_user("nonexistent@example.com").await, Err(UserStoreError::UserNotFound));
+        assert_eq!(
+            store.get_user("nonexistent@example.com").await,
+            Err(UserStoreError::UserNotFound)
+        );
     }
 
     #[tokio::test]
@@ -79,8 +86,19 @@ mod tests {
             requires_2fa: false,
         };
         assert!(store.add_user(user.clone()).await.is_ok());
-        assert_eq!(store.validate_user(&user.email, &user.password).await, Ok(()));
-        assert_eq!(store.validate_user(&user.email, "wrong_password").await, Err(UserStoreError::InvalidCredentials));
-        assert_eq!(store.validate_user("nonexistent@example.com", &user.password).await, Err(UserStoreError::UserNotFound));
+        assert_eq!(
+            store.validate_user(&user.email, &user.password).await,
+            Ok(())
+        );
+        assert_eq!(
+            store.validate_user(&user.email, "wrong_password").await,
+            Err(UserStoreError::InvalidCredentials)
+        );
+        assert_eq!(
+            store
+                .validate_user("nonexistent@example.com", &user.password)
+                .await,
+            Err(UserStoreError::UserNotFound)
+        );
     }
 }

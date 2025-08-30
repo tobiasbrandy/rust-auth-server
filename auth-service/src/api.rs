@@ -1,8 +1,17 @@
-use axum::{extract::State, http::StatusCode, response::{IntoResponse, Response}, routing::post, Json, Router};
+use axum::{
+    Json, Router,
+    extract::State,
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    routing::post,
+};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
-use crate::{app_state::AppState, domain::{error::AuthAPIError, user::User}};
+use crate::{
+    app_state::AppState,
+    domain::{error::AuthAPIError, user::User},
+};
 
 pub fn api_router(app_state: AppState) -> Router {
     Router::new()
@@ -54,12 +63,16 @@ async fn signup(
         password: body.password,
         requires_2fa: body.requires_2fa,
     };
-    user.validate().map_err(|_| AuthAPIError::InvalidCredentials)?;
+    user.validate()
+        .map_err(|_| AuthAPIError::InvalidCredentials)?;
 
     let mut user_store = state.user_store.write().await;
 
     // For now, we just assert successful operation
-    let user = user_store.add_user(user).await.map_err(|_| AuthAPIError::UserAlreadyExists)?;
+    let user = user_store
+        .add_user(user)
+        .await
+        .map_err(|_| AuthAPIError::UserAlreadyExists)?;
 
     Ok((
         StatusCode::CREATED,

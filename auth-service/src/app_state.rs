@@ -11,7 +11,7 @@ pub struct AppState {
 impl AppState {
     pub fn new(user_store: impl UserStore + 'static) -> Self {
         Self {
-            user_store: Arc::new(RwLock::new(user_store))
+            user_store: Arc::new(RwLock::new(user_store)),
         }
     }
 }
