@@ -1,4 +1,34 @@
+# Build artifacts
+target/
+*/target/
+Cargo.lock
+
+# Environment files
+.env
+*.env
+
+# IDE
 .vscode/
 .idea/
+.claude/
 
-.env
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Node modules (for any JS tooling)
+node_modules/
+
+# Docker (keep git history of these)
+# docker-compose.override.yml
+
+# Runtime
+*.pid
+
+# Learning/context files
+.learn/

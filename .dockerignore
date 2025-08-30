@@ -1,0 +1,37 @@
+# Git
+.git
+.gitignore
+
+# Docker files (don't copy into build context)  
+Dockerfile*
+docker-compose*.yml
+
+# Documentation
+README.md
+*.md
+
+# Build artifacts (will be built inside container)
+target/
+*/target/
+
+# IDE files
+.vscode/
+.idea/
+.claude/
+
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Node modules and logs
+node_modules/
+*.log
+
+# Environment files (use Docker env instead)
+.env
+*.env
+
+# Runtime files
+*.pid

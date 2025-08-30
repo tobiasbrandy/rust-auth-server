@@ -21,27 +21,18 @@ jobs:
       uses: actions/cache@v3
       with:
         path: |
-          app-service/.cargo
-          app-service/target/
-          auth-service/.cargo
-          auth-service/target/
+          ~/.cargo
+          target/
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: ${{ runner.os }}-cargo-
 
     - name: Install Rust
       run: rustup update stable && rustup default stable
 
-    - name: Build and test app-service code
-      working-directory: ./app-service
+    - name: Build and test workspace code
       run: |
-        cargo build --verbose
-        cargo test --verbose
-
-    - name: Build and test auth-service code
-      working-directory: ./auth-service
-      run: |
-        cargo build --verbose
-        cargo test --verbose
+        cargo build --verbose --workspace
+        cargo test --verbose --workspace
 
       # Set up Docker Buildx for multi-platform builds
     - name: Set up Docker Buildx
