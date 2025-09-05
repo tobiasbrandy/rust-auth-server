@@ -1,10 +1,14 @@
 use auth_service::{
-    Application, app_state::AppState, services::hashmap_user_store::HashmapUserStore,
+    config, Application, app_state::AppState, services::hashmap_user_store::HashmapUserStore,
 };
 
 #[tokio::main]
 async fn main() {
-    let app = Application::build("0.0.0.0:3000", AppState::new(HashmapUserStore::default()))
+    let app_config = config::load_config().expect("Failed to load config");
+
+    let app_state = AppState::new(app_config, HashmapUserStore::default());
+
+    let app = Application::build("0.0.0.0:3000", app_state)
         .await
         .expect("Failed to build app");
 

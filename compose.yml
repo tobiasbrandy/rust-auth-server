@@ -4,13 +4,15 @@ services:
     restart: always
     ports:
       - "3000:3000"
+    environment:
+      AUTH__JWT_SECRETS: ${AUTH__JWT_SECRETS:-{}}
 
   app-service:
     image: tobiasbrandy/app-service:latest
     restart: always
-    environment:
-      AUTH_SERVICE_IP: ${AUTH_SERVICE_IP:-localhost}
     ports:
       - "8000:8000"
     depends_on:
       - auth-service
+    environment:
+      AUTH_SERVICE_IP: ${AUTH_SERVICE_IP:-localhost}

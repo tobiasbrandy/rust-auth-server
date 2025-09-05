@@ -1,7 +1,9 @@
+pub mod config;
 pub mod api;
 pub mod app_state;
 pub mod domain;
 pub mod services;
+pub mod auth;
 
 use axum::{Router, serve::Serve};
 use tower_http::services::{ServeDir, ServeFile};

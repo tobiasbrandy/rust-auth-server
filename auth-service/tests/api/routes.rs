@@ -1,4 +1,5 @@
 use auth_service::api::{ErrorResponse, SignupResponse};
+use axum::http::StatusCode;
 use serde_json::json;
 
 use crate::helpers::TestApp;
@@ -9,7 +10,7 @@ async fn root() {
 
     let response = app.get("/").send().await.unwrap();
 
-    assert_eq!(response.status().as_u16(), 200);
+    assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(response.headers().get("content-type").unwrap(), "text/html");
 }
 
@@ -24,7 +25,7 @@ async fn signup() {
     });
 
     let response = app.post("/signup").json(&body).send().await.unwrap();
-    assert_eq!(response.status().as_u16(), 201);
+    assert_eq!(response.status(), StatusCode::CREATED);
     assert_eq!(
         response.json::<SignupResponse>().await.unwrap(),
         SignupResponse {
@@ -43,11 +44,11 @@ async fn signup_malformed_body() {
     });
 
     let response = app.post("/signup").json(&body).send().await.unwrap();
-    assert_eq!(response.status().as_u16(), 422);
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
 
 #[tokio::test]
-async fn signup_should_return_400_if_invalid_input() {
+async fn signup_invalid_input() {
     let invalid_inputs = vec![
         // Empty email
         json!({
@@ -74,7 +75,7 @@ async fn signup_should_return_400_if_invalid_input() {
     for input in invalid_inputs {
         let response = app.post("/signup").json(&input).send().await.unwrap();
 
-        assert_eq!(response.status().as_u16(), 400);
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         assert_eq!(
             response.json::<ErrorResponse>().await.unwrap().error,
             "Invalid credentials".to_string()
@@ -83,7 +84,7 @@ async fn signup_should_return_400_if_invalid_input() {
 }
 
 #[tokio::test]
-async fn signup_should_return_409_if_email_already_exists() {
+async fn signup_email_already_exists() {
     // Call the signup route twice. The second request should fail with a 409 HTTP status code
     let app = TestApp::new().await;
 
@@ -94,10 +95,10 @@ async fn signup_should_return_409_if_email_already_exists() {
     });
 
     let response = app.post("/signup").json(&body).send().await.unwrap();
-    assert_eq!(response.status().as_u16(), 201);
+    assert_eq!(response.status(), StatusCode::CREATED);
 
     let response = app.post("/signup").json(&body).send().await.unwrap();
-    assert_eq!(response.status().as_u16(), 409);
+    assert_eq!(response.status(), StatusCode::CONFLICT);
     assert_eq!(
         response.json::<ErrorResponse>().await.unwrap().error,
         "User already exists".to_owned()
@@ -108,9 +109,114 @@ async fn signup_should_return_409_if_email_already_exists() {
 async fn login() {
     let app = TestApp::new().await;
 
-    let response = app.post("/login").send().await.unwrap();
+    // First, create a user to login with
+    let signup_body = json!({
+        "email": "test@example.com",
+        "password": "password123",
+        "requires2FA": true
+    });
 
-    assert_eq!(response.status().as_u16(), 200);
+    let signup_response = app.post("/signup").json(&signup_body).send().await.unwrap();
+    assert_eq!(signup_response.status().as_u16(), 201);
+
+    // Now test login with valid credentials
+    let login_body = json!({
+        "email": "test@example.com",
+        "password": "password123"
+    });
+
+    let response = app.post("/login").json(&login_body).send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn login_malformed_body() {
+    let app = TestApp::new().await;
+
+    let body = json!({
+        "password": "password123"
+    });
+
+    let response = app.post("/login").json(&body).send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn login_invalid_input() {
+    let invalid_inputs = vec![
+        // Empty email
+        json!({
+            "email": "",
+            "password": "password123"
+        }),
+        // Email without @
+        json!({
+            "email": "invalid_email",
+            "password": "password123"
+        }),
+        // Password less than 8 characters
+        json!({
+            "email": "valid_email@example.com",
+            "password": "pass"
+        }),
+    ];
+
+    let app = TestApp::new().await;
+
+    for input in invalid_inputs {
+        let response = app.post("/login").json(&input).send().await.unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            response.json::<ErrorResponse>().await.unwrap().error,
+            "Invalid credentials".to_string()
+        );
+    }
+}
+
+#[tokio::test]
+async fn login_user_does_not_exist() {
+    let app = TestApp::new().await;
+
+    let body = json!({
+        "email": "nonexistent@example.com",
+        "password": "password123"
+    });
+
+    let response = app.post("/login").json(&body).send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        response.json::<ErrorResponse>().await.unwrap().error,
+        "Incorrect credentials".to_string()
+    );
+}
+
+#[tokio::test]
+async fn login_password_is_incorrect() {
+    let app = TestApp::new().await;
+
+    // First, create a user
+    let signup_body = json!({
+        "email": "test@example.com",
+        "password": "password123",
+        "requires2FA": true
+    });
+
+    let signup_response = app.post("/signup").json(&signup_body).send().await.unwrap();
+    assert_eq!(signup_response.status().as_u16(), 201);
+
+    // Now try to login with wrong password
+    let login_body = json!({
+        "email": "test@example.com",
+        "password": "wrongpassword"
+    });
+
+    let response = app.post("/login").json(&login_body).send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        response.json::<ErrorResponse>().await.unwrap().error,
+        "Incorrect credentials".to_string()
+    );
 }
 
 #[tokio::test]
@@ -119,7 +225,7 @@ async fn verify_2fa() {
 
     let response = app.post("/verify-2fa").send().await.unwrap();
 
-    assert_eq!(response.status().as_u16(), 200);
+    assert_eq!(response.status(), StatusCode::OK);
 }
 
 #[tokio::test]
@@ -128,7 +234,7 @@ async fn logout() {
 
     let response = app.post("/logout").send().await.unwrap();
 
-    assert_eq!(response.status().as_u16(), 200);
+    assert_eq!(response.status(), StatusCode::OK);
 }
 
 #[tokio::test]
@@ -137,5 +243,5 @@ async fn verify_token() {
 
     let response = app.post("/verify-token").send().await.unwrap();
 
-    assert_eq!(response.status().as_u16(), 200);
+    assert_eq!(response.status(), StatusCode::OK);
 }

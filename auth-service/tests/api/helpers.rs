@@ -1,5 +1,5 @@
 use auth_service::{
-    Application, app_state::AppState, services::hashmap_user_store::HashmapUserStore,
+    config, Application, app_state::AppState, services::hashmap_user_store::HashmapUserStore,
 };
 
 pub struct TestApp {
@@ -9,7 +9,11 @@ pub struct TestApp {
 
 impl TestApp {
     pub async fn new() -> Self {
-        let app = Application::build("127.0.0.1:0", AppState::new(HashmapUserStore::default()))
+        let app_config = config::load_config().expect("Failed to load config");
+
+        let app_state = AppState::new(app_config, HashmapUserStore::default());
+
+        let app = Application::build("127.0.0.1:0", app_state)
             .await
             .expect("Failed to build app");
 
