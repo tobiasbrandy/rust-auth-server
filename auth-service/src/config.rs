@@ -19,8 +19,8 @@ pub fn load_config<'de, T: Deserialize<'de> + Validate>() -> Result<T, Box<dyn s
 
     let mut env_vars = std::env::vars().collect::<HashMap<_, _>>();
 
-    if let AppEnv::Dev = env {
-        let env_overrides = dotenvy::dotenv_iter()?.collect::<Result<Vec<_>, _>>()?;
+    if let AppEnv::Dev = env && let Ok(dotenv_iter) = dotenvy::dotenv_iter() {
+        let env_overrides = dotenv_iter.collect::<Result<Vec<_>, _>>()?;
         env_vars.extend(env_overrides);
     }
 
@@ -43,6 +43,7 @@ pub fn load_config<'de, T: Deserialize<'de> + Validate>() -> Result<T, Box<dyn s
 #[serde(rename_all = "snake_case")]
 pub enum AppEnv {
     Dev,
+    Test,
     Prod,
 }
 impl AppEnv {
@@ -57,6 +58,7 @@ impl std::fmt::Display for AppEnv {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AppEnv::Dev => write!(f, "dev"),
+            AppEnv::Test => write!(f, "test"),
             AppEnv::Prod => write!(f, "prod"),
         }
     }
@@ -67,6 +69,7 @@ impl std::str::FromStr for AppEnv {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "dev" => Ok(AppEnv::Dev),
+            "test" => Ok(AppEnv::Test),
             "prod" => Ok(AppEnv::Prod),
             s => Err(s.to_owned()),
         }

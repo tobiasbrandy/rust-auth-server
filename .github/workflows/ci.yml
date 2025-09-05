@@ -2,8 +2,11 @@ name: CI
 
 on:
   pull_request:
-    branches: [ main ]
+    branches: [main]
   workflow_call:
+    secrets:
+      AUTH__JWT_SECRETS:
+        required: true
 
 env:
   CARGO_TERM_COLOR: always
@@ -23,7 +26,10 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Run tests
-        run: cargo test --verbose --workspace
+        run: |
+          export APP_ENV=test
+          export AUTH__JWT_SECRETS=${{ secrets.AUTH__JWT_SECRETS }}
+          cargo test --verbose --workspace
 
   fmt:
     name: Rustfmt
