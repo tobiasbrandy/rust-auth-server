@@ -9,25 +9,31 @@ use crate::auth;
 #[derive(Debug, Clone, Deserialize, Validate)]
 pub struct AppConfig {
     pub env: AppEnv,
+    pub host: String,
     #[validate(nested)]
     pub auth: auth::AuthConfig,
 }
 
 // Could be a separate module/crate
-pub fn load_config<'de, T: Deserialize<'de> + Validate>() -> Result<T, Box<dyn std::error::Error>> {
-    let env = AppEnv::detect();
+pub fn load_config<'de, T: Deserialize<'de> + Validate>(
+    env_prexif: &str,
+) -> Result<T, Box<dyn std::error::Error>> {
+    let env = AppEnv::detect(env_prexif);
 
     let mut env_vars = std::env::vars().collect::<HashMap<_, _>>();
 
-    if let AppEnv::Dev = env && let Ok(dotenv_iter) = dotenvy::dotenv_iter() {
+    if let AppEnv::Dev = env
+        && let Ok(dotenv_iter) = dotenvy::dotenv_iter()
+    {
         let env_overrides = dotenv_iter.collect::<Result<Vec<_>, _>>()?;
         env_vars.extend(env_overrides);
     }
 
+    env_vars.insert(format!("{env_prexif}__ENV"), env.to_string());
+
     let config = Config::builder()
-        .set_override("env", env.to_string())?
         .add_source(
-            config::Environment::default()
+            config::Environment::with_prefix(env_prexif)
                 .separator("__")
                 .source(Some(env_vars)),
         )
@@ -47,9 +53,11 @@ pub enum AppEnv {
     Prod,
 }
 impl AppEnv {
-    pub fn detect() -> Self {
-        match std::env::var("APP_ENV") {
-            Ok(env) => env.parse().expect("Invalid APP_ENV"),
+    pub fn detect(env_prefix: &str) -> Self {
+        match std::env::var(format!("{env_prefix}__ENV")) {
+            Ok(env) => env
+                .parse()
+                .unwrap_or_else(|s| panic!("Invalid {env_prefix}__ENV: {s}")),
             Err(_) => AppEnv::Dev,
         }
     }

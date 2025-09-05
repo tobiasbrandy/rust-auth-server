@@ -1,5 +1,5 @@
 # Shared builder stage with cargo-chef for dependency caching
-FROM rust:1.85-alpine AS chef
+FROM rust:1.89-alpine AS chef
 USER root
 # Add cargo-chef to cache dependencies
 RUN apk add --no-cache musl-dev && cargo install cargo-chef

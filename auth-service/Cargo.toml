@@ -20,3 +20,4 @@ config = { workspace = true }
 
 [dev-dependencies]
 reqwest = { workspace = true }
+reqwest_cookie_store = { workspace = true }

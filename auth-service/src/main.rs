@@ -4,7 +4,7 @@ use auth_service::{
 
 #[tokio::main]
 async fn main() {
-    let app_config = config::load_config().expect("Failed to load config");
+    let app_config = config::load_config("APP").expect("Failed to load config");
 
     let app_state = AppState::new(app_config, HashmapUserStore::default());
 

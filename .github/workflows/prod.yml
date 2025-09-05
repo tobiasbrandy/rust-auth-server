@@ -11,8 +11,9 @@ jobs:
   # Ensure CI checks pass before building/deploying
   ci:
     uses: ./.github/workflows/ci.yml
-    secrets:
-      AUTH__JWT_SECRETS: ${{ secrets.AUTH__JWT_SECRETS }}
+    secrets: inherit
+    with:
+      APP__HOST: ${{ vars.APP__HOST }}
 
   build:
     needs: ci
@@ -83,8 +84,9 @@ jobs:
           password: ${{ secrets.DROPLET_PASSWORD }}
           script: |
             cd ~
-            export APP_ENV=prod
-            export AUTH__JWT_SECRETS=${{ secrets.AUTH__JWT_SECRETS }}
+            export APP__ENV=prod
+            export APP__HOST=${{ vars.APP__HOST }}
+            export APP__AUTH__JWT_SECRETS=${{ secrets.APP__AUTH__JWT_SECRETS }}
             export AUTH_SERVICE_IP=${{ vars.DROPLET_IP }}
             docker compose down
             docker compose pull

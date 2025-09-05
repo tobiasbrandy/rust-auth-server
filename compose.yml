@@ -5,8 +5,9 @@ services:
     ports:
       - "3000:3000"
     environment:
-      APP_ENV: ${APP_ENV:-dev}
-      AUTH__JWT_SECRETS: ${AUTH__JWT_SECRETS:-'{}'}
+      APP__ENV: ${APP__ENV:-dev}
+      APP__HOST: ${APP__HOST:-localhost}
+      APP__AUTH__JWT_SECRETS: ${APP__AUTH__JWT_SECRETS:-'{}'}
 
   app-service:
     image: tobiasbrandy/app-service:latest
