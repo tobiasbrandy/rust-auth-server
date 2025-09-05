@@ -2,10 +2,7 @@ use std::sync::Arc;
 
 use tokio::sync::RwLock;
 
-use crate::{
-    config::AppConfig,
-    domain::data_stores::UserStore,
-};
+use crate::{config::AppConfig, domain::data_stores::UserStore};
 
 #[derive(Debug, Clone)]
 pub struct AppState {

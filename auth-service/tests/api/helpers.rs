@@ -1,5 +1,5 @@
 use auth_service::{
-    config, Application, app_state::AppState, services::hashmap_user_store::HashmapUserStore,
+    Application, app_state::AppState, config, services::hashmap_user_store::HashmapUserStore,
 };
 
 pub struct TestApp {

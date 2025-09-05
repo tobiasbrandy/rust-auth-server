@@ -126,7 +126,7 @@ async fn login(
             .same_site(cookie::SameSite::Lax)
             .max_age(::cookie::time::Duration::seconds(
                 auth::JWT_TTL.as_secs().try_into().unwrap(),
-            ))
+            )),
     );
 
     Ok((StatusCode::OK, jar))

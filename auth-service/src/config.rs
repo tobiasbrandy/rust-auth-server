@@ -26,7 +26,11 @@ pub fn load_config<'de, T: Deserialize<'de> + Validate>() -> Result<T, Box<dyn s
 
     let config = Config::builder()
         .set_override("env", env.to_string())?
-        .add_source(config::Environment::default().separator("__").source(Some(env_vars)))
+        .add_source(
+            config::Environment::default()
+                .separator("__")
+                .source(Some(env_vars)),
+        )
         .build()?
         .try_deserialize::<T>()?;
 
