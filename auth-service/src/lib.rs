@@ -1,4 +1,4 @@
-pub mod api;
+pub mod routes;
 pub mod app_state;
 pub mod auth;
 pub mod config;
@@ -8,7 +8,7 @@ pub mod services;
 use axum::{Router, serve::Serve};
 use tower_http::services::{ServeDir, ServeFile};
 
-use crate::{api::api_router, app_state::AppState};
+use crate::{routes::api_router, app_state::AppState};
 
 pub struct Application {
     server: Serve<tokio::net::TcpListener, Router, Router>,

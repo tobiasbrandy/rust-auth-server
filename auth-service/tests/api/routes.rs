@@ -1,8 +1,8 @@
-use auth_service::api::{ErrorResponse, SignupResponse};
+use auth_service::routes::{ErrorResponse, SignupResponse};
 use axum::http::StatusCode;
 use serde_json::json;
 
-use crate::helpers::TestApp;
+use crate::common::TestApp;
 
 #[tokio::test]
 async fn root() {
