@@ -1,0 +1,68 @@
+use std::collections::HashSet;
+
+use async_trait::async_trait;
+
+use crate::domain::data_stores::BannedTokenStore;
+
+#[derive(Debug, Clone, Default)]
+pub struct HashsetBannedTokenStore {
+    tokens: HashSet<String>,
+}
+
+#[async_trait]
+impl BannedTokenStore for HashsetBannedTokenStore {
+    async fn add_token(&mut self, token: String) {
+        self.tokens.insert(token);
+    }
+
+    async fn contains_token(&self, token: &str) -> bool {
+        self.tokens.contains(token)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_store_token() {
+        let mut store = HashsetBannedTokenStore::default();
+        let token = "test_token".to_string();
+
+        store.add_token(token.clone()).await;
+        assert!(store.contains_token(&token).await);
+    }
+
+    #[tokio::test]
+    async fn test_contains_token_returns_false_for_non_existent_token() {
+        let store = HashsetBannedTokenStore::default();
+        let token = "non_existent_token";
+
+        assert!(!store.contains_token(token).await);
+    }
+
+    #[tokio::test]
+    async fn test_store_multiple_tokens() {
+        let mut store = HashsetBannedTokenStore::default();
+        let token1 = "token1".to_string();
+        let token2 = "token2".to_string();
+
+        store.add_token(token1.clone()).await;
+        store.add_token(token2.clone()).await;
+
+        assert!(store.contains_token(&token1).await);
+        assert!(store.contains_token(&token2).await);
+        assert!(!store.contains_token("token3").await);
+    }
+
+    #[tokio::test]
+    async fn test_store_duplicate_token() {
+        let mut store = HashsetBannedTokenStore::default();
+        let token = "duplicate_token".to_string();
+
+        store.add_token(token.clone()).await;
+        store.add_token(token.clone()).await; // Should not fail
+
+        assert!(store.contains_token(&token).await);
+    }
+}

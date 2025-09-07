@@ -1,7 +1,14 @@
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 use auth_service::{
-    Application, app_state::AppState, config, services::hashmap_user_store::HashmapUserStore,
+    Application,
+    app_state::AppState,
+    config,
+    domain::data_stores::BannedTokenStore,
+    services::{
+        hashmap_user_store::HashmapUserStore, hashset_banned_token_store::HashsetBannedTokenStore,
+    },
 };
 
 pub struct TestApp {
@@ -9,13 +16,19 @@ pub struct TestApp {
     pub url: reqwest::Url,
     pub cookies: Arc<reqwest_cookie_store::CookieStoreRwLock>,
     pub http_client: reqwest::Client,
+    pub banned_token_store: Arc<RwLock<dyn BannedTokenStore>>,
 }
 
 impl TestApp {
     pub async fn new() -> Self {
         let app_config = config::load_config("APP").expect("Failed to load config");
 
-        let app_state = AppState::new(app_config, HashmapUserStore::default());
+        let banned_token_store = HashsetBannedTokenStore::default();
+
+        let app_state = AppState::new(app_config, HashmapUserStore::default(), banned_token_store);
+
+        // Clone the banned token store reference from app_state for testing
+        let banned_token_store_ref = app_state.banned_token_store.clone();
 
         let app = Application::build("127.0.0.1:0", app_state)
             .await
@@ -40,6 +53,7 @@ impl TestApp {
             url,
             cookies,
             http_client,
+            banned_token_store: banned_token_store_ref,
         }
     }
 

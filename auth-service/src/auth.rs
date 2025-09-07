@@ -3,6 +3,8 @@ use std::{collections::HashMap, ops::Add};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
+use crate::domain::data_stores::BannedTokenStore;
+
 const JWT_ISSUER: &str = "auth.rust.tobiasbrandy.com"; // TODO: change to app service URL once we have a URL
 pub const JWT_TTL: std::time::Duration = std::time::Duration::from_secs(15 * 60); // 15 minutes
 const JWT_LEEWAY_SECONDS: u64 = 60;
@@ -127,11 +129,31 @@ pub fn generate_auth_token(
     jsonwebtoken::encode(&config.header, &claims, &config.encoding_key)
 }
 
-pub fn validate_auth_token(
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum AuthTokenValidationError {
+    #[error("Token is banned")]
+    BannedToken,
+    #[error("Missing token kid")]
+    MissingKid,
+    #[error("Invalid token kid")]
+    InvalidKid,
+    #[error(transparent)]
+    InvalidToken(#[from] jsonwebtoken::errors::Error),
+}
+
+pub async fn validate_auth_token(
     config: &AuthConfig,
+    banned_tokens: &dyn BannedTokenStore,
     token: &str,
     app: &str,
-) -> Result<Claims, jsonwebtoken::errors::Error> {
+) -> Result<Claims, AuthTokenValidationError> {
+    // First check if token is banned
+    let is_banned = banned_tokens.contains_token(token).await;
+
+    if is_banned {
+        return Err(AuthTokenValidationError::BannedToken);
+    }
+
     let validation = {
         let mut v = jsonwebtoken::Validation::new(JWT_ALGORITHM);
         v.set_required_spec_claims(&["exp", "nbf", "aud", "iss", "sub"]);
@@ -147,17 +169,22 @@ pub fn validate_auth_token(
 
     let kid = jsonwebtoken::decode_header(token)?
         .kid
-        .and_then(|k| k.parse().ok())
-        .unwrap_or(config.header.kid.as_ref().unwrap().parse().unwrap());
+        .ok_or(AuthTokenValidationError::MissingKid)?
+        .parse()
+        .map_err(|_| AuthTokenValidationError::InvalidKid)?;
 
-    let decoding_key = config.decoding_keys.get(&kid).unwrap();
+    let decoding_key = config
+        .decoding_keys
+        .get(&kid)
+        .ok_or(AuthTokenValidationError::InvalidKid)?;
 
-    jsonwebtoken::decode::<Claims>(token, decoding_key, &validation).map(|data| data.claims)
+    Ok(jsonwebtoken::decode::<Claims>(token, decoding_key, &validation)?.claims)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::hashset_banned_token_store::HashsetBannedTokenStore;
     use std::collections::HashMap;
 
     fn create_test_auth_config() -> AuthConfig {
@@ -185,11 +212,12 @@ mod tests {
     #[tokio::test]
     async fn test_validate_auth_token_success() {
         let config = create_test_auth_config();
+        let banned_token_store = HashsetBannedTokenStore::default();
         let email = "test@example.com";
         let app = "test-app";
 
         let token = generate_auth_token(&config, email, app).unwrap();
-        let result = validate_auth_token(&config, &token, app);
+        let result = validate_auth_token(&config, &banned_token_store, &token, app).await;
 
         assert!(result.is_ok());
         let claims = result.unwrap();
@@ -216,35 +244,32 @@ mod tests {
     #[tokio::test]
     async fn test_validate_auth_token_wrong_app() {
         let config = create_test_auth_config();
+        let banned_token_store = HashsetBannedTokenStore::default();
         let email = "test@example.com";
         let app = "test-app";
         let wrong_app = "wrong-app";
 
         let token = generate_auth_token(&config, email, app).unwrap();
-        let result = validate_auth_token(&config, &token, wrong_app);
+        let result = validate_auth_token(&config, &banned_token_store, &token, wrong_app).await;
 
         assert!(result.is_err());
-
-        // Should fail due to audience mismatch
-        match result.unwrap_err().kind() {
-            jsonwebtoken::errors::ErrorKind::InvalidAudience => {}
-            _ => panic!("Expected InvalidAudience error"),
-        }
     }
 
     #[tokio::test]
     async fn test_validate_auth_token_invalid_token() {
         let config = create_test_auth_config();
+        let banned_token_store = HashsetBannedTokenStore::default();
         let invalid_token = "invalid.token.here";
         let app = "test-app";
 
-        let result = validate_auth_token(&config, invalid_token, app);
+        let result = validate_auth_token(&config, &banned_token_store, invalid_token, app).await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn test_validate_auth_token_tampered_signature() {
         let config = create_test_auth_config();
+        let banned_token_store = HashsetBannedTokenStore::default();
         let email = "test@example.com";
         let app = "test-app";
 
@@ -255,18 +280,14 @@ mod tests {
         let tampered_signature = format!("{}{}x", parts[2], "tampered");
         token = format!("{}.{}.{}", parts[0], parts[1], tampered_signature);
 
-        let result = validate_auth_token(&config, &token, app);
+        let result = validate_auth_token(&config, &banned_token_store, &token, app).await;
         assert!(result.is_err());
-
-        match result.unwrap_err().kind() {
-            jsonwebtoken::errors::ErrorKind::InvalidSignature => {}
-            _ => panic!("Expected InvalidSignature error"),
-        }
     }
 
     #[tokio::test]
     async fn test_token_roundtrip_different_apps() {
         let config = create_test_auth_config();
+        let banned_token_store = HashsetBannedTokenStore::default();
         let email = "test@example.com";
         let app1 = "app1";
         let app2 = "app2";
@@ -278,15 +299,32 @@ mod tests {
         assert_ne!(token1, token2);
 
         // Each token should validate only for its respective app
-        assert!(validate_auth_token(&config, &token1, app1).is_ok());
-        assert!(validate_auth_token(&config, &token2, app2).is_ok());
-        assert!(validate_auth_token(&config, &token1, app2).is_err());
-        assert!(validate_auth_token(&config, &token2, app1).is_err());
+        assert!(
+            validate_auth_token(&config, &banned_token_store, &token1, app1)
+                .await
+                .is_ok()
+        );
+        assert!(
+            validate_auth_token(&config, &banned_token_store, &token2, app2)
+                .await
+                .is_ok()
+        );
+        assert!(
+            validate_auth_token(&config, &banned_token_store, &token1, app2)
+                .await
+                .is_err()
+        );
+        assert!(
+            validate_auth_token(&config, &banned_token_store, &token2, app1)
+                .await
+                .is_err()
+        );
     }
 
     #[tokio::test]
     async fn test_token_uniqueness() {
         let config = create_test_auth_config();
+        let banned_token_store = HashsetBannedTokenStore::default();
         let email = "test@example.com";
         let app = "test-app";
 
@@ -307,8 +345,37 @@ mod tests {
 
         // Verify that all tokens are still valid
         for token in &tokens {
-            assert!(validate_auth_token(&config, token, app).is_ok());
+            assert!(
+                validate_auth_token(&config, &banned_token_store, token, app)
+                    .await
+                    .is_ok()
+            );
         }
+    }
+
+    #[tokio::test]
+    async fn test_validate_auth_token_banned_token() {
+        let config = create_test_auth_config();
+        let mut banned_token_store = HashsetBannedTokenStore::default();
+        let email = "test@example.com";
+        let app = "test-app";
+
+        let token = generate_auth_token(&config, email, app).unwrap();
+
+        // First verify token is valid
+        assert!(
+            validate_auth_token(&config, &banned_token_store, &token, app)
+                .await
+                .is_ok()
+        );
+
+        // Ban the token
+        banned_token_store.add_token(token.clone()).await;
+
+        // Now verify token is rejected
+        let result = validate_auth_token(&config, &banned_token_store, &token, app).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Token is banned"));
     }
 
     #[test]

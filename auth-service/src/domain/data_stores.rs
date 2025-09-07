@@ -17,3 +17,10 @@ pub trait UserStore: std::fmt::Debug + Send + Sync {
 
     async fn validate_user(&self, email: &str, password: &str) -> Result<(), UserStoreError>;
 }
+
+#[async_trait]
+pub trait BannedTokenStore: std::fmt::Debug + Send + Sync {
+    async fn add_token(&mut self, token: String);
+
+    async fn contains_token(&self, token: &str) -> bool;
+}

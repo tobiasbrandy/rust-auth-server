@@ -73,17 +73,14 @@ async fn signup(
     body.validate()
         .map_err(|_| AuthAPIError::InvalidCredentials)?;
 
-    let user = User {
-        email: body.email,
-        password: body.password,
-        requires_2fa: body.requires_2fa,
-    };
-
     let mut user_store = state.user_store.write().await;
 
-    // For now, we just assert successful operation
     let user = user_store
-        .add_user(user)
+        .add_user(User {
+            email: body.email,
+            password: body.password,
+            requires_2fa: body.requires_2fa,
+        })
         .await
         .map_err(|_| AuthAPIError::UserAlreadyExists)?;
 
@@ -144,8 +141,21 @@ async fn logout(state: State<AppState>, jar: CookieJar) -> Result<impl IntoRespo
         .ok_or(AuthAPIError::MissingToken)?
         .value();
 
-    auth::validate_auth_token(&state.config.auth, auth_token, DEFAULT_APP)
-        .map_err(|_| AuthAPIError::InvalidToken)?;
+    auth::validate_auth_token(
+        &state.config.auth,
+        &*state.banned_token_store.read().await,
+        auth_token,
+        DEFAULT_APP,
+    )
+    .await
+    .map_err(|_| AuthAPIError::InvalidToken)?;
+
+    state
+        .banned_token_store
+        .write()
+        .await
+        .add_token(auth_token.to_string())
+        .await;
 
     let jar = jar.remove(cookie::Cookie::build(AUTH_TOKEN_COOKIE_NAME).path("/"));
 
@@ -163,8 +173,14 @@ async fn verify_token(
 ) -> Result<impl IntoResponse, AuthAPIError> {
     body.validate().map_err(|_| AuthAPIError::InvalidToken)?;
 
-    auth::validate_auth_token(&state.config.auth, &body.token, DEFAULT_APP)
-        .map_err(|_| AuthAPIError::InvalidToken)?;
+    auth::validate_auth_token(
+        &state.config.auth,
+        &*state.banned_token_store.read().await,
+        &body.token,
+        DEFAULT_APP,
+    )
+    .await
+    .map_err(|_| AuthAPIError::InvalidToken)?;
 
     Ok(StatusCode::OK)
 }

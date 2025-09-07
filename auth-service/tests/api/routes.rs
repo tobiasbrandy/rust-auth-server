@@ -250,7 +250,17 @@ async fn logout() {
     assert_eq!(response.status(), StatusCode::OK);
 
     // Verify that the cookie is added
-    assert!(app.get_cookie("/", AUTH_TOKEN_COOKIE_NAME).is_some());
+    let auth_cookie = app.get_cookie("/", AUTH_TOKEN_COOKIE_NAME).unwrap();
+    let token = auth_cookie.value().to_string();
+
+    // Verify token is not in banned store before logout
+    assert!(
+        !app.banned_token_store
+            .read()
+            .await
+            .contains_token(&token)
+            .await
+    );
 
     // Logout
     let response = app.post("/logout").send().await.unwrap();
@@ -258,6 +268,15 @@ async fn logout() {
 
     // Verify that the cookie is removed
     assert!(app.get_cookie("/", AUTH_TOKEN_COOKIE_NAME).is_none());
+
+    // Verify token was added to banned store
+    assert!(
+        app.banned_token_store
+            .read()
+            .await
+            .contains_token(&token)
+            .await
+    );
 
     // Try to logout again
     let response = app.post("/logout").send().await.unwrap();
@@ -335,4 +354,41 @@ async fn verify_token_malformed_body() {
     let response = app.post("/verify-token").json(&body).send().await.unwrap();
 
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn should_return_401_if_banned_token() {
+    let app = TestApp::new().await;
+
+    // Signup
+    let signup_body = json!({
+        "email": "test@example.com",
+        "password": "password123",
+        "requires2FA": true
+    });
+    let signup_response = app.post("/signup").json(&signup_body).send().await.unwrap();
+    assert_eq!(signup_response.status(), StatusCode::CREATED);
+
+    // Login
+    let login_body = json!({
+        "email": "test@example.com",
+        "password": "password123"
+    });
+    let response = app.post("/login").json(&login_body).send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // Get token from cookie
+    let auth_cookie = app.get_cookie("/", AUTH_TOKEN_COOKIE_NAME).unwrap();
+    let token = auth_cookie.value().to_string();
+
+    // Logout to ban the token
+    let response = app.post("/logout").send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // Verify that the banned token is rejected
+    let body: serde_json::Value = json!({
+        "token": token,
+    });
+    let response = app.post("/verify-token").json(&body).send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }

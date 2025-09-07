@@ -17,6 +17,7 @@ jsonwebtoken = { workspace = true }
 cookie = { workspace = true }
 dotenvy = { workspace = true }
 config = { workspace = true }
+thiserror = { workspace = true }
 
 [dev-dependencies]
 reqwest = { workspace = true }
