@@ -1,4 +1,7 @@
-use auth_service::routes::{AUTH_TOKEN_COOKIE_NAME, ErrorResponse};
+use auth_service::{
+    api::routes::{AUTH_TOKEN_COOKIE_NAME, ErrorResponse},
+    service,
+};
 use axum::http::StatusCode;
 use serde_json::json;
 
@@ -303,7 +306,7 @@ async fn logout_invalid_jwt() {
             .secure(true)
             .same_site(cookie::SameSite::Lax)
             .max_age(::cookie::time::Duration::seconds(
-                auth_service::auth::JWT_TTL.as_secs().try_into().unwrap(),
+                service::auth::JWT_TTL.as_secs().try_into().unwrap(),
             )),
     );
 

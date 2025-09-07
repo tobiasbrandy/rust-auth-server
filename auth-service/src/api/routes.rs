@@ -9,11 +9,7 @@ use axum_extra::extract::{CookieJar, cookie};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
-use crate::{
-    app_state::AppState,
-    auth,
-    domain::{error::AuthAPIError, user::User},
-};
+use crate::{api::app_state::AppState, models::user::User, service::auth};
 
 pub const DEFAULT_APP: &str = "auth-service";
 pub const AUTH_TOKEN_COOKIE_NAME: &str = "__Host-access_token";
@@ -28,6 +24,15 @@ pub fn api_router(app_state: AppState) -> Router {
         .with_state(app_state)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AuthAPIError {
+    UserAlreadyExists,
+    InvalidCredentials,
+    IncorrectCredentials,
+    MissingToken,
+    InvalidToken,
+    UnexpectedError,
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ErrorResponse {
     pub error: String,

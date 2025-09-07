@@ -2,18 +2,18 @@ use std::collections::{HashMap, hash_map::Entry};
 
 use async_trait::async_trait;
 
-use crate::domain::{
-    data_stores::{UserStore, UserStoreError},
-    user::User,
+use crate::{
+    models::user::User,
+    persistence::{UserStore, UserStoreError},
 };
 
 #[derive(Debug, Clone, Default)]
-pub struct HashmapUserStore {
+pub struct InMemoryUserStore {
     users: HashMap<String, User>,
 }
 
 #[async_trait]
-impl UserStore for HashmapUserStore {
+impl UserStore for InMemoryUserStore {
     async fn add_user(&mut self, user: User) -> Result<&User, UserStoreError> {
         match self.users.entry(user.email.clone()) {
             Entry::Occupied(_) => Err(UserStoreError::UserAlreadyExists),
@@ -48,7 +48,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_add_user() {
-        let mut store = HashmapUserStore::default();
+        let mut store = InMemoryUserStore::default();
         let user = User {
             email: "test@example.com".to_string(),
             password: "password".to_string(),
@@ -63,7 +63,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_user() {
-        let mut store = HashmapUserStore::default();
+        let mut store = InMemoryUserStore::default();
         let user = User {
             email: "test@example.com".to_string(),
             password: "password".to_string(),
@@ -79,7 +79,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_user() {
-        let mut store = HashmapUserStore::default();
+        let mut store = InMemoryUserStore::default();
         let user = User {
             email: "test@example.com".to_string(),
             password: "password".to_string(),

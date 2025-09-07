@@ -4,7 +4,7 @@ use tokio::sync::RwLock;
 
 use crate::{
     config::AppConfig,
-    domain::data_stores::{BannedTokenStore, UserStore},
+    persistence::{BannedTokenStore, UserStore},
 };
 
 #[derive(Debug, Clone)]

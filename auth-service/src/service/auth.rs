@@ -3,7 +3,7 @@ use std::{collections::HashMap, ops::Add};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
-use crate::domain::data_stores::BannedTokenStore;
+use crate::persistence::BannedTokenStore;
 
 const JWT_ISSUER: &str = "auth.rust.tobiasbrandy.com"; // TODO: change to app service URL once we have a URL
 pub const JWT_TTL: std::time::Duration = std::time::Duration::from_secs(15 * 60); // 15 minutes
@@ -184,7 +184,7 @@ pub async fn validate_auth_token(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::hashset_banned_token_store::HashsetBannedTokenStore;
+    use crate::persistence::in_memory_banned_token_store::InMemoryBannedTokenStore;
     use std::collections::HashMap;
 
     fn create_test_auth_config() -> AuthConfig {
@@ -212,7 +212,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_auth_token_success() {
         let config = create_test_auth_config();
-        let banned_token_store = HashsetBannedTokenStore::default();
+        let banned_token_store = InMemoryBannedTokenStore::default();
         let email = "test@example.com";
         let app = "test-app";
 
@@ -244,7 +244,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_auth_token_wrong_app() {
         let config = create_test_auth_config();
-        let banned_token_store = HashsetBannedTokenStore::default();
+        let banned_token_store = InMemoryBannedTokenStore::default();
         let email = "test@example.com";
         let app = "test-app";
         let wrong_app = "wrong-app";
@@ -258,7 +258,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_auth_token_invalid_token() {
         let config = create_test_auth_config();
-        let banned_token_store = HashsetBannedTokenStore::default();
+        let banned_token_store = InMemoryBannedTokenStore::default();
         let invalid_token = "invalid.token.here";
         let app = "test-app";
 
@@ -269,7 +269,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_auth_token_tampered_signature() {
         let config = create_test_auth_config();
-        let banned_token_store = HashsetBannedTokenStore::default();
+        let banned_token_store = InMemoryBannedTokenStore::default();
         let email = "test@example.com";
         let app = "test-app";
 
@@ -287,7 +287,7 @@ mod tests {
     #[tokio::test]
     async fn test_token_roundtrip_different_apps() {
         let config = create_test_auth_config();
-        let banned_token_store = HashsetBannedTokenStore::default();
+        let banned_token_store = InMemoryBannedTokenStore::default();
         let email = "test@example.com";
         let app1 = "app1";
         let app2 = "app2";
@@ -324,7 +324,7 @@ mod tests {
     #[tokio::test]
     async fn test_token_uniqueness() {
         let config = create_test_auth_config();
-        let banned_token_store = HashsetBannedTokenStore::default();
+        let banned_token_store = InMemoryBannedTokenStore::default();
         let email = "test@example.com";
         let app = "test-app";
 
@@ -356,7 +356,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_auth_token_banned_token() {
         let config = create_test_auth_config();
-        let mut banned_token_store = HashsetBannedTokenStore::default();
+        let mut banned_token_store = InMemoryBannedTokenStore::default();
         let email = "test@example.com";
         let app = "test-app";
 

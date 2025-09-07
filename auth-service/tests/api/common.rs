@@ -3,11 +3,11 @@ use tokio::sync::RwLock;
 
 use auth_service::{
     Application,
-    app_state::AppState,
+    api::app_state::AppState,
     config,
-    domain::data_stores::BannedTokenStore,
-    services::{
-        hashmap_user_store::HashmapUserStore, hashset_banned_token_store::HashsetBannedTokenStore,
+    persistence::{
+        BannedTokenStore, in_memory_banned_token_store::InMemoryBannedTokenStore,
+        in_memory_user_store::InMemoryUserStore,
     },
 };
 
@@ -23,9 +23,9 @@ impl TestApp {
     pub async fn new() -> Self {
         let app_config = config::load_config("APP").expect("Failed to load config");
 
-        let banned_token_store = HashsetBannedTokenStore::default();
+        let banned_token_store = InMemoryBannedTokenStore::default();
 
-        let app_state = AppState::new(app_config, HashmapUserStore::default(), banned_token_store);
+        let app_state = AppState::new(app_config, InMemoryUserStore::default(), banned_token_store);
 
         // Clone the banned token store reference from app_state for testing
         let banned_token_store_ref = app_state.banned_token_store.clone();

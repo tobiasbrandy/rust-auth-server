@@ -1,4 +1,7 @@
-use crate::domain::user::User;
+pub mod in_memory_banned_token_store;
+pub mod in_memory_user_store;
+
+use crate::models::user::User;
 use async_trait::async_trait;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

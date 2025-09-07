@@ -4,13 +4,18 @@ use config::Config;
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
-use crate::auth;
+use crate::service;
 
 #[derive(Debug, Clone, Deserialize, Validate)]
 pub struct AppConfig {
     pub env: AppEnv,
     #[validate(nested)]
-    pub auth: auth::AuthConfig,
+    pub auth: service::auth::AuthConfig,
+}
+impl AppConfig {
+    pub fn load(env_prefix: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        load_config(env_prefix)
+    }
 }
 
 // Could be a separate module/crate
