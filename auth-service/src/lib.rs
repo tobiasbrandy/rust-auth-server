@@ -5,11 +5,8 @@ pub mod domain;
 pub mod routes;
 pub mod services;
 
-use axum::{Router, http::Method, serve::Serve};
-use tower_http::{
-    cors::CorsLayer,
-    services::{ServeDir, ServeFile},
-};
+use axum::{Router, serve::Serve};
+use tower_http::services::{ServeDir, ServeFile};
 
 use crate::{app_state::AppState, routes::api_router};
 
@@ -57,5 +54,5 @@ fn app_router(app_state: AppState) -> Router {
         .nest_service("/assets", ServeDir::new("assets"))
         .route_service("/", ServeFile::new("assets/index.html"))
         .merge(api_router(app_state))
-        // .layer(cors)
+    // .layer(cors)
 }
