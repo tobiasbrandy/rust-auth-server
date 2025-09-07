@@ -8,7 +8,7 @@ async fn main() {
 
     let app_state = AppState::new(app_config, HashmapUserStore::default());
 
-    let app = Application::build("0.0.0.0:3000", app_state)
+    let app = Application::build("0.0.0.0:80", app_state)
         .await
         .expect("Failed to build app");
 

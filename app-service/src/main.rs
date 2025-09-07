@@ -16,7 +16,7 @@ async fn main() {
         .route("/", get(root))
         .route("/protected", get(protected));
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8000").await.unwrap();
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:80").await.unwrap();
 
     println!("listening on {}", listener.local_addr().unwrap());
     axum::serve(listener, app).await.unwrap();
@@ -45,9 +45,15 @@ async fn protected(jar: CookieJar) -> impl IntoResponse {
         "token": &jwt_cookie.value(),
     });
 
-    let response = match api_client.post("http://auth-service/verify-token").json(&verify_token_body).send().await {
+    let response = match api_client
+        .post("http://auth-service/verify-token")
+        .json(&verify_token_body)
+        .send()
+        .await
+    {
         Ok(response) => response,
-        Err(_) => {
+        Err(e) => {
+            println!("Error verifying token: {}", e);
             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
     };

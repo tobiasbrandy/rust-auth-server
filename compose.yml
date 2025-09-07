@@ -3,7 +3,7 @@ services:
     image: tobiasbrandy/auth-service:latest
     restart: always
     expose:
-      - "3000"
+      - "80"
     environment:
       APP__ENV: ${APP__ENV:-dev}
       APP__AUTH__JWT_SECRETS: ${APP__AUTH__JWT_SECRETS:-'{}'}
@@ -12,7 +12,7 @@ services:
     image: tobiasbrandy/app-service:latest
     restart: always
     expose:
-      - "8000"
+      - "80"
     depends_on:
       - auth-service
 

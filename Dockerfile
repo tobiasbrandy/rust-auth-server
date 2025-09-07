@@ -24,7 +24,7 @@ RUN apk add --no-cache ca-certificates
 WORKDIR /app
 COPY --from=builder /app/target/release/auth-service /usr/local/bin/
 COPY --from=builder /app/auth-service/assets ./assets
-EXPOSE 3000
+EXPOSE 80
 CMD ["auth-service"]
 
 # App service runtime
@@ -34,6 +34,5 @@ WORKDIR /app
 COPY --from=builder /app/target/release/app-service /usr/local/bin/
 COPY --from=builder /app/app-service/assets ./assets
 COPY --from=builder /app/app-service/templates ./templates
-ENV AUTH_SERVICE_HOST_NAME=auth-service
-EXPOSE 8000
+EXPOSE 80
 CMD ["app-service"]
