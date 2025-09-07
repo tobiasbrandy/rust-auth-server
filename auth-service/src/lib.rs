@@ -38,22 +38,24 @@ impl Application {
     }
 }
 
-fn cors_layer(app_host: &str) -> CorsLayer {
-    CorsLayer::new()
-        .allow_methods([Method::GET, Method::POST])
-        .allow_credentials(true)
-        .allow_origin([
-            "http://localhost:8000".parse().unwrap(),
-            format!("http://{app_host}:8000").parse().unwrap(),
-        ])
-}
+// fn cors_layer(app_host: &str) -> CorsLayer {
+//     CorsLayer::new()
+//         .allow_methods([Method::GET, Method::POST])
+//         .allow_credentials(true)
+//         .allow_origin([
+//             "http://localhost:8000".parse().unwrap(),
+//             format!("http://{app_host}:8000").parse().unwrap(),
+//             "http://localhost".parse().unwrap(),
+//             format!("http://{app_host}").parse().unwrap(),
+//         ])
+// }
 
 fn app_router(app_state: AppState) -> Router {
-    let cors = cors_layer(&app_state.config.host);
+    // let cors = cors_layer(&app_state.config.host);
 
     Router::new()
         .nest_service("/assets", ServeDir::new("assets"))
         .route_service("/", ServeFile::new("assets/index.html"))
         .merge(api_router(app_state))
-        .layer(cors)
+        // .layer(cors)
 }

@@ -3,8 +3,16 @@ services:
     build:
       context: .
       target: auth-service
+    ports:
+      - "3000:3000"
 
   app-service:
     build:
       context: .
       target: app-service
+    ports:
+      - "8000:8000"
+
+  nginx:
+    ports:
+      - "8080:80"
