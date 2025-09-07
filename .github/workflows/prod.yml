@@ -72,9 +72,7 @@ jobs:
         run: sudo apt-get install sshpass
 
       - name: Copy compose.yml and nginx config to droplet
-        run: |
-          sshpass -v -p '${{ secrets.DROPLET_PASSWORD }}' scp -o StrictHostKeyChecking=no compose.yml root@${{ vars.DROPLET_HOST }}:~
-          sshpass -v -p '${{ secrets.DROPLET_PASSWORD }}' scp -o StrictHostKeyChecking=no -r nginx/ root@${{ vars.DROPLET_HOST }}:~/
+        run: sshpass -v -p '${{ secrets.DROPLET_PASSWORD }}' scp -o StrictHostKeyChecking=no compose.yml nginx.conf root@${{ vars.DROPLET_HOST }}:~
 
       - name: Deploy
         uses: appleboy/ssh-action@master

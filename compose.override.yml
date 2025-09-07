@@ -9,10 +9,12 @@ services:
   app-service:
     build:
       context: .
-      target: app-service
+      target: app-service  
     ports:
       - "8000:80"
 
   nginx:
     ports:
       - "8080:80"
+    volumes:
+      - ./nginx.dev.conf:/etc/nginx/nginx.conf:ro

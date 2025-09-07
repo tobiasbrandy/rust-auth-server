@@ -1,7 +1,7 @@
 services:
   auth-service:
     image: tobiasbrandy/auth-service:latest
-    restart: always
+    restart: unless-stopped
     expose:
       - "80"
     environment:
@@ -10,7 +10,7 @@ services:
 
   app-service:
     image: tobiasbrandy/app-service:latest
-    restart: always
+    restart: unless-stopped
     expose:
       - "80"
     depends_on:
@@ -18,11 +18,13 @@ services:
 
   nginx:
     image: nginx:alpine
-    restart: always
+    restart: unless-stopped
     ports:
       - "80:80"
+      - "443:443"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - /etc/ssl/cert:/etc/ssl/cert:ro
     depends_on:
       - auth-service
       - app-service
