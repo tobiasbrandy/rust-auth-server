@@ -42,7 +42,7 @@ loginButton.addEventListener("click", (e) => {
     const email = loginForm.email.value;
     const password = loginForm.password.value;
 
-    fetch('/login', {
+    fetch('/auth/login', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',

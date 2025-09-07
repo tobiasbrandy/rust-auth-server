@@ -9,7 +9,6 @@ use crate::auth;
 #[derive(Debug, Clone, Deserialize, Validate)]
 pub struct AppConfig {
     pub env: AppEnv,
-    pub host: String,
     #[validate(nested)]
     pub auth: auth::AuthConfig,
 }

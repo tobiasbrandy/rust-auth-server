@@ -4,10 +4,6 @@ on:
   pull_request:
     branches: [main]
   workflow_call:
-    inputs:
-      APP__HOST:
-        required: true
-        type: string
 
 env:
   CARGO_TERM_COLOR: always
@@ -29,7 +25,6 @@ jobs:
       - name: Run tests
         run: |
           export APP__ENV=test
-          export APP__HOST=${{ inputs.APP__HOST || vars.APP__HOST }}
           export APP__AUTH__JWT_SECRETS=${{ secrets.APP__AUTH__JWT_SECRETS }}
           cargo test --verbose --workspace
 

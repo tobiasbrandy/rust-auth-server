@@ -6,7 +6,6 @@ services:
       - "3000"
     environment:
       APP__ENV: ${APP__ENV:-dev}
-      APP__HOST: ${APP__HOST:-localhost}
       APP__AUTH__JWT_SECRETS: ${APP__AUTH__JWT_SECRETS:-'{}'}
 
   app-service:
@@ -16,8 +15,6 @@ services:
       - "8000"
     depends_on:
       - auth-service
-    environment:
-      AUTH_SERVICE_IP: ${AUTH_SERVICE_IP:-localhost}
 
   nginx:
     image: nginx:alpine
