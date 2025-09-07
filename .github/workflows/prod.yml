@@ -73,13 +73,13 @@ jobs:
 
       - name: Copy compose.yml and nginx config to droplet
         run: |
-          sshpass -v -p '${{ secrets.DROPLET_PASSWORD }}' scp -o StrictHostKeyChecking=no compose.yml root@${{ vars.HOST }}:~
-          sshpass -v -p '${{ secrets.DROPLET_PASSWORD }}' scp -o StrictHostKeyChecking=no -r nginx/ root@${{ vars.HOST }}:~/
+          sshpass -v -p '${{ secrets.DROPLET_PASSWORD }}' scp -o StrictHostKeyChecking=no compose.yml root@${{ vars.DROPLET_HOST }}:~
+          sshpass -v -p '${{ secrets.DROPLET_PASSWORD }}' scp -o StrictHostKeyChecking=no -r nginx/ root@${{ vars.DROPLET_HOST }}:~/
 
       - name: Deploy
         uses: appleboy/ssh-action@master
         with:
-          host: ${{ vars.HOST }}
+          host: ${{ vars.DROPLET_HOST }}
           username: root
           password: ${{ secrets.DROPLET_PASSWORD }}
           script: |
