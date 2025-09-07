@@ -33,6 +33,8 @@ docker compose build
 docker compose up
 ```
 
+**Local development uses `nginx.dev.conf` for HTTP-only configuration.**
+
 **Access through nginx reverse proxy:**
 - Main app: http://localhost:8080/
 - Auth service: http://localhost:8080/auth/
@@ -40,6 +42,10 @@ docker compose up
 **Direct service access (also available):**
 - Auth service: http://localhost:3000 (bypasses nginx)
 - App service: http://localhost:8000 (bypasses nginx)
+
+**Configuration Files:**
+- `nginx.dev.conf` - Local development (HTTP-only, no SSL)
+- `nginx.conf` - Production (HTTPS with SSL termination)
 
 ## SSL/HTTPS Setup (Production)
 
@@ -104,3 +110,10 @@ Cloudflare Origin Certificates are valid for 15 years - no renewal needed until 
 ## Production Deployment
 
 The application is deployed to `https://rust-auth.tobiasbrandy.com` using GitHub Actions CI/CD pipeline with nginx reverse proxy providing HTTPS termination.
+
+**Production Configuration:**
+- **SSL/TLS**: Cloudflare Origin Certificates with nginx SSL termination
+- **Ports**: 80 (HTTP → HTTPS redirect) + 443 (HTTPS)
+- **Configuration**: `nginx.conf` with SSL, security headers, and HTTPS proxy headers
+- **Certificate Path**: `/etc/ssl/cert/` (manually deployed, persists across deployments)
+- **Cloudflare**: Full (strict) mode for end-to-end encryption
