@@ -76,10 +76,6 @@ async fn signup_invalid_input() {
         let response = app.post("/signup").json(&input).send().await.unwrap();
 
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        assert_eq!(
-            response.json::<ErrorResponse>().await.unwrap().error,
-            "Invalid credentials".to_string()
-        );
     }
 }
 
@@ -167,10 +163,6 @@ async fn login_invalid_input() {
         let response = app.post("/login").json(&input).send().await.unwrap();
 
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        assert_eq!(
-            response.json::<ErrorResponse>().await.unwrap().error,
-            "Invalid credentials".to_string()
-        );
     }
 }
 

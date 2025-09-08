@@ -11,7 +11,11 @@ use serde::{Deserialize, Serialize};
 use validator::Validate;
 
 use crate::{
-    api::{app_state::AppState, extractors::auth::Authorized, middleware::auth::auth_middleware},
+    api::{
+        app_state::AppState,
+        extractors::{auth::Authorized, validation::Valid},
+        middleware::auth::auth_middleware,
+    },
     config,
     models::user::User,
     service::auth::{self, Principal},
@@ -78,11 +82,8 @@ pub struct SignupResponse {
 }
 async fn signup(
     State(state): State<AppState>,
-    Json(body): Json<SignupRequest>,
+    Valid(Json(body)): Valid<Json<SignupRequest>>,
 ) -> Result<impl IntoResponse, AuthAPIError> {
-    body.validate()
-        .map_err(|_| AuthAPIError::InvalidCredentials)?;
-
     let mut user_store = state.user_store.write().await;
 
     let user = user_store
@@ -112,11 +113,8 @@ pub struct LoginRequest {
 async fn login(
     State(state): State<AppState>,
     jar: CookieJar,
-    Json(body): Json<LoginRequest>,
+    Valid(Json(body)): Valid<Json<LoginRequest>>,
 ) -> Result<impl IntoResponse, AuthAPIError> {
-    body.validate()
-        .map_err(|_| AuthAPIError::InvalidCredentials)?;
-
     let user_store = state.user_store.read().await;
 
     user_store
@@ -162,13 +160,13 @@ async fn logout(
     (StatusCode::OK, jar)
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Validate)]
 pub struct VerifyTokenRequest {
     pub token: String,
 }
 async fn verify_token(
     State(state): State<AppState>,
-    Json(body): Json<VerifyTokenRequest>,
+    Valid(Json(body)): Valid<Json<VerifyTokenRequest>>,
 ) -> Result<impl IntoResponse, AuthAPIError> {
     auth::validate_auth_token(
         &state.config.auth,
