@@ -5,7 +5,7 @@ use validator::Validate;
 
 use crate::persistence::BannedTokenStore;
 
-const JWT_ISSUER: &str = "auth.rust.tobiasbrandy.com"; // TODO: change to app service URL once we have a URL
+const JWT_ISSUER: &str = "rust-auth.tobiasbrandy.com";
 pub const JWT_TTL: std::time::Duration = std::time::Duration::from_secs(15 * 60); // 15 minutes
 const JWT_LEEWAY_SECONDS: u64 = 60;
 const JWT_ALGORITHM: jsonwebtoken::Algorithm = jsonwebtoken::Algorithm::HS256;
@@ -105,6 +105,16 @@ pub struct Claims {
     nbf: u64,
     exp: u64,
     jti: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Principal {
+    pub email: String,
+}
+impl From<Claims> for Principal {
+    fn from(Claims { sub, .. }: Claims) -> Self {
+        Principal { email: sub }
+    }
 }
 
 pub fn generate_auth_token(

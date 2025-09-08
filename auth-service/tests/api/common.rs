@@ -88,6 +88,10 @@ impl TestApp {
             .collect()
     }
 
+    pub fn clear_cookies(&self) {
+        self.cookies.write().unwrap().clear();
+    }
+
     pub fn request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
         self.http_client
             .request(method, format!("{}{}", &self.address, path))

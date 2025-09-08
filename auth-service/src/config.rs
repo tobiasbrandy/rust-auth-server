@@ -6,6 +6,9 @@ use validator::Validate;
 
 use crate::service;
 
+pub const APP_NAME: &str = "auth-service";
+pub const AUTH_TOKEN_COOKIE_NAME: &str = "__Host-access_token";
+
 #[derive(Debug, Clone, Deserialize, Validate)]
 pub struct AppConfig {
     pub env: AppEnv,

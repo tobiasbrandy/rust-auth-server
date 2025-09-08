@@ -2,17 +2,20 @@ use axum::{
     Json, Router,
     extract::State,
     http::StatusCode,
+    middleware,
     response::{IntoResponse, Response},
-    routing::post,
+    routing::{get, post},
 };
 use axum_extra::extract::{CookieJar, cookie};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
-use crate::{api::app_state::AppState, models::user::User, service::auth};
-
-pub const DEFAULT_APP: &str = "auth-service";
-pub const AUTH_TOKEN_COOKIE_NAME: &str = "__Host-access_token";
+use crate::{
+    api::{app_state::AppState, extractors::auth::Authorized, middleware::auth::auth_middleware},
+    config,
+    models::user::User,
+    service::auth::{self, Principal},
+};
 
 pub fn api_router(app_state: AppState) -> Router {
     Router::new()
@@ -21,7 +24,9 @@ pub fn api_router(app_state: AppState) -> Router {
         .route("/verify-2fa", post(verify_2fa))
         .route("/logout", post(logout))
         .route("/verify-token", post(verify_token))
-        .with_state(app_state)
+        .route("/me", get(authed_user))
+        .with_state(app_state.clone())
+        .layer(middleware::from_fn_with_state(app_state, auth_middleware))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -119,11 +124,11 @@ async fn login(
         .await
         .map_err(|_| AuthAPIError::IncorrectCredentials)?;
 
-    let auth_token = auth::generate_auth_token(&state.config.auth, &body.email, DEFAULT_APP)
+    let auth_token = auth::generate_auth_token(&state.config.auth, &body.email, config::APP_NAME)
         .map_err(|_| AuthAPIError::IncorrectCredentials)?;
 
     let jar = jar.add(
-        cookie::Cookie::build((AUTH_TOKEN_COOKIE_NAME, auth_token))
+        cookie::Cookie::build((config::AUTH_TOKEN_COOKIE_NAME, auth_token))
             .path("/")
             .http_only(true)
             .secure(true)
@@ -140,52 +145,48 @@ async fn verify_2fa() -> impl IntoResponse {
     StatusCode::OK.into_response()
 }
 
-async fn logout(state: State<AppState>, jar: CookieJar) -> Result<impl IntoResponse, AuthAPIError> {
-    let auth_token = jar
-        .get(AUTH_TOKEN_COOKIE_NAME)
-        .ok_or(AuthAPIError::MissingToken)?
-        .value();
-
-    auth::validate_auth_token(
-        &state.config.auth,
-        &*state.banned_token_store.read().await,
-        auth_token,
-        DEFAULT_APP,
-    )
-    .await
-    .map_err(|_| AuthAPIError::InvalidToken)?;
-
+async fn logout(
+    Authorized(token): Authorized<String>,
+    State(state): State<AppState>,
+    jar: CookieJar,
+) -> impl IntoResponse {
     state
         .banned_token_store
         .write()
         .await
-        .add_token(auth_token.to_string())
+        .add_token(token.to_string())
         .await;
 
-    let jar = jar.remove(cookie::Cookie::build(AUTH_TOKEN_COOKIE_NAME).path("/"));
+    let jar = jar.remove(cookie::Cookie::build(config::AUTH_TOKEN_COOKIE_NAME).path("/"));
 
-    Ok((StatusCode::OK, jar))
+    (StatusCode::OK, jar)
 }
 
-#[derive(Debug, Clone, Deserialize, Validate)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct VerifyTokenRequest {
-    #[validate(length(min = 1))]
     pub token: String,
 }
 async fn verify_token(
     State(state): State<AppState>,
     Json(body): Json<VerifyTokenRequest>,
 ) -> Result<impl IntoResponse, AuthAPIError> {
-    body.validate().map_err(|_| AuthAPIError::InvalidToken)?;
-
     auth::validate_auth_token(
         &state.config.auth,
         &*state.banned_token_store.read().await,
         &body.token,
-        DEFAULT_APP,
+        config::APP_NAME,
     )
     .await
     .map_err(|_| AuthAPIError::InvalidToken)?;
 
     Ok(StatusCode::OK)
+}
+
+async fn authed_user(
+    Authorized(principal): Authorized<Principal>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let user_store = state.user_store.read().await;
+    let user = user_store.get_user(&principal.email).await.unwrap();
+    (StatusCode::OK, Json(user))
 }
