@@ -18,6 +18,7 @@ cookie = { workspace = true }
 dotenvy = { workspace = true }
 config = { workspace = true }
 thiserror = { workspace = true }
+rand = { workspace = true }
 
 [dev-dependencies]
 reqwest = { workspace = true }

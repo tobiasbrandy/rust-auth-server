@@ -15,6 +15,7 @@ reqwest = { version = "0.12.23", default-features = false, features = [
 ] }
 cookie = { version = "0.18.1" }
 thiserror = { version = "2.0.10" }
+rand = { version = "0.9.2" }
 
 # Auth service specific
 uuid = { version = "1.18.1", features = ["v4", "serde"] }

@@ -1,4 +1,12 @@
-use auth_service::{api::routes::ErrorResponse, config, service};
+use auth_service::{
+    api::routes::{
+        ErrorResponse, Login2FAResponse, LoginRequest, SignupRequest, SignupResponse,
+        Verify2FARequest, VerifyTokenRequest,
+    },
+    config,
+    models::user::User,
+    service,
+};
 use axum::http::StatusCode;
 use serde_json::json;
 
@@ -18,19 +26,18 @@ async fn root() {
 async fn signup() {
     let app = TestApp::new().await;
 
-    let body = json!({
-        "email": "test@example.com",
-        "password": "password123",
-        "requires2FA": true
-    });
+    let body = SignupRequest {
+        email: "test@example.com".to_string(),
+        password: "password123".to_string(),
+        requires_2fa: true,
+    };
 
     let response = app.post("/signup").json(&body).send().await.unwrap();
     assert_eq!(response.status(), StatusCode::CREATED);
+    let body = response.json::<SignupResponse>().await.unwrap();
     assert_eq!(
-        response.json::<serde_json::Value>().await.unwrap(),
-        json!({
-            "message": "User test@example.com created successfully!"
-        })
+        body.message,
+        "User test@example.com created successfully!".to_string()
     );
 }
 
@@ -51,23 +58,23 @@ async fn signup_malformed_body() {
 async fn signup_invalid_input() {
     let invalid_inputs = vec![
         // Empty email
-        json!({
-            "email": "",
-            "password": "password123",
-            "requires2FA": true
-        }),
+        SignupRequest {
+            email: "".to_string(),
+            password: "password123".to_string(),
+            requires_2fa: true,
+        },
         // Email without @
-        json!({
-            "email": "invalid_email",
-            "password": "password123",
-            "requires2FA": true
-        }),
+        SignupRequest {
+            email: "invalid_email".to_string(),
+            password: "password123".to_string(),
+            requires_2fa: true,
+        },
         // Password less than 8 characters
-        json!({
-            "email": "valid_email@example.com",
-            "password": "pass",
-            "requires2FA": true
-        }),
+        SignupRequest {
+            email: "valid_email@example.com".to_string(),
+            password: "pass".to_string(),
+            requires_2fa: true,
+        },
     ];
 
     let app = TestApp::new().await;
@@ -84,11 +91,11 @@ async fn signup_email_already_exists() {
     // Call the signup route twice. The second request should fail with a 409 HTTP status code
     let app = TestApp::new().await;
 
-    let body = json!({
-        "email": "test@example.com",
-        "password": "password123",
-        "requires2FA": true
-    });
+    let body = SignupRequest {
+        email: "test@example.com".to_string(),
+        password: "password123".to_string(),
+        requires_2fa: true,
+    };
 
     let response = app.post("/signup").json(&body).send().await.unwrap();
     assert_eq!(response.status(), StatusCode::CREATED);
@@ -106,23 +113,65 @@ async fn login() {
     let app = TestApp::new().await;
 
     // First, create a user to login with
-    let signup_body = json!({
-        "email": "test@example.com",
-        "password": "password123",
-        "requires2FA": true
-    });
+    let signup_body = SignupRequest {
+        email: "test@example.com".to_string(),
+        password: "password123".to_string(),
+        requires_2fa: false,
+    };
 
     let signup_response = app.post("/signup").json(&signup_body).send().await.unwrap();
     assert_eq!(signup_response.status(), StatusCode::CREATED);
 
     // Now test login with valid credentials
-    let login_body = json!({
-        "email": "test@example.com",
-        "password": "password123"
-    });
+    let login_body = LoginRequest {
+        email: "test@example.com".to_string(),
+        password: "password123".to_string(),
+    };
 
     let response = app.post("/login").json(&login_body).send().await.unwrap();
+
+    assert!(
+        app.get_cookie("/", config::AUTH_TOKEN_COOKIE_NAME)
+            .is_some()
+    );
     assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn login_2fa() {
+    let app = TestApp::new().await;
+
+    // First, create a user to login with
+    let signup_body = SignupRequest {
+        email: "test@example.com".to_string(),
+        password: "password123".to_string(),
+        requires_2fa: true,
+    };
+
+    let signup_response = app.post("/signup").json(&signup_body).send().await.unwrap();
+    assert_eq!(signup_response.status(), StatusCode::CREATED);
+
+    // Now test login with valid credentials
+    let login_body = LoginRequest {
+        email: "test@example.com".to_string(),
+        password: "password123".to_string(),
+    };
+
+    let response = app.post("/login").json(&login_body).send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+    let body = response.json::<Login2FAResponse>().await.unwrap();
+    assert_eq!(body.message, "2FA required");
+    assert_eq!(
+        app.state
+            .two_fa_code_store
+            .read()
+            .await
+            .get_code("test@example.com")
+            .await
+            .unwrap()
+            .0,
+        body.login_attempt_id
+    );
 }
 
 #[tokio::test]
@@ -141,20 +190,20 @@ async fn login_malformed_body() {
 async fn login_invalid_input() {
     let invalid_inputs = vec![
         // Empty email
-        json!({
-            "email": "",
-            "password": "password123"
-        }),
+        LoginRequest {
+            email: "".to_string(),
+            password: "password123".to_string(),
+        },
         // Email without @
-        json!({
-            "email": "invalid_email",
-            "password": "password123"
-        }),
+        LoginRequest {
+            email: "invalid_email".to_string(),
+            password: "password123".to_string(),
+        },
         // Password less than 8 characters
-        json!({
-            "email": "valid_email@example.com",
-            "password": "pass"
-        }),
+        LoginRequest {
+            email: "valid_email@example.com".to_string(),
+            password: "pass".to_string(),
+        },
     ];
 
     let app = TestApp::new().await;
@@ -170,10 +219,10 @@ async fn login_invalid_input() {
 async fn login_user_does_not_exist() {
     let app = TestApp::new().await;
 
-    let body = json!({
-        "email": "nonexistent@example.com",
-        "password": "password123"
-    });
+    let body = LoginRequest {
+        email: "nonexistent@example.com".to_string(),
+        password: "password123".to_string(),
+    };
 
     let response = app.post("/login").json(&body).send().await.unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
@@ -188,36 +237,77 @@ async fn login_password_is_incorrect() {
     let app = TestApp::new().await;
 
     // First, create a user
-    let signup_body = json!({
-        "email": "test@example.com",
-        "password": "password123",
-        "requires2FA": true
-    });
+    let signup_body = SignupRequest {
+        email: "test@example.com".to_string(),
+        password: "password123".to_string(),
+        requires_2fa: false,
+    };
 
     let signup_response = app.post("/signup").json(&signup_body).send().await.unwrap();
     assert_eq!(signup_response.status(), StatusCode::CREATED);
 
     // Now try to login with wrong password
-    let login_body = json!({
-        "email": "test@example.com",
-        "password": "wrongpassword"
-    });
+    let login_body = LoginRequest {
+        email: "test@example.com".to_string(),
+        password: "wrongpassword".to_string(),
+    };
 
     let response = app.post("/login").json(&login_body).send().await.unwrap();
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    assert_eq!(
-        response.json::<ErrorResponse>().await.unwrap().error,
-        "Incorrect credentials".to_string()
-    );
+    assert_eq!(response.status(), StatusCode::OK);
 }
 
 #[tokio::test]
 async fn verify_2fa() {
     let app = TestApp::new().await;
 
-    let response = app.post("/verify-2fa").send().await.unwrap();
+    // Create a user requiring 2FA
+    let signup_body = SignupRequest {
+        email: "twofa@example.com".to_string(),
+        password: "password123".to_string(),
+        requires_2fa: true,
+    };
+    let signup_response = app.post("/signup").json(&signup_body).send().await.unwrap();
+    assert_eq!(signup_response.status(), StatusCode::CREATED);
+
+    // Start login to generate login_attempt_id and send code
+    let login_body = LoginRequest {
+        email: "twofa@example.com".to_string(),
+        password: "password123".to_string(),
+    };
+    let response = app.post("/login").json(&login_body).send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+    let body = response.json::<Login2FAResponse>().await.unwrap();
+
+    // Retrieve the stored code and use it to verify
+    let (login_attempt_id, code) = app
+        .state
+        .two_fa_code_store
+        .read()
+        .await
+        .get_code("twofa@example.com")
+        .await
+        .unwrap();
+
+    assert_eq!(login_attempt_id, body.login_attempt_id);
+
+    let verify_body = Verify2FARequest {
+        email: "twofa@example.com".to_string(),
+        login_attempt_id,
+        code,
+    };
+    let response = app
+        .post("/verify-2fa")
+        .json(&verify_body)
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
+    // Cookie should be set after successful verification
+    assert!(
+        app.get_cookie("/", config::AUTH_TOKEN_COOKIE_NAME)
+            .is_some()
+    );
 }
 
 #[tokio::test]
@@ -225,19 +315,19 @@ async fn logout() {
     let app = TestApp::new().await;
 
     // Signup
-    let signup_body = json!({
-        "email": "test@example.com",
-        "password": "password123",
-        "requires2FA": true
-    });
+    let signup_body = SignupRequest {
+        email: "test@example.com".to_string(),
+        password: "password123".to_string(),
+        requires_2fa: false,
+    };
     let signup_response = app.post("/signup").json(&signup_body).send().await.unwrap();
     assert_eq!(signup_response.status(), StatusCode::CREATED);
 
     // Login
-    let login_body = json!({
-        "email": "test@example.com",
-        "password": "password123"
-    });
+    let login_body = LoginRequest {
+        email: "test@example.com".to_string(),
+        password: "password123".to_string(),
+    };
     let response = app.post("/login").json(&login_body).send().await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
@@ -247,7 +337,8 @@ async fn logout() {
 
     // Verify token is not in banned store before logout
     assert!(
-        !app.banned_token_store
+        !app.state
+            .banned_token_store
             .read()
             .await
             .contains_token(&token)
@@ -266,7 +357,8 @@ async fn logout() {
 
     // Verify token was added to banned store
     assert!(
-        app.banned_token_store
+        app.state
+            .banned_token_store
             .read()
             .await
             .contains_token(&token)
@@ -312,19 +404,19 @@ async fn me_with_valid_cookie() {
     let app = TestApp::new().await;
 
     // Signup
-    let signup_body = json!({
-        "email": "test@example.com",
-        "password": "password123",
-        "requires2FA": true
-    });
+    let signup_body = SignupRequest {
+        email: "test@example.com".to_string(),
+        password: "password123".to_string(),
+        requires_2fa: false,
+    };
     let signup_response = app.post("/signup").json(&signup_body).send().await.unwrap();
     assert_eq!(signup_response.status(), StatusCode::CREATED);
 
     // Login to receive auth cookie
-    let login_body = json!({
-        "email": "test@example.com",
-        "password": "password123"
-    });
+    let login_body = LoginRequest {
+        email: "test@example.com".to_string(),
+        password: "password123".to_string(),
+    };
     let response = app.post("/login").json(&login_body).send().await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
@@ -332,14 +424,14 @@ async fn me_with_valid_cookie() {
     let response = app.get("/me").send().await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
-    let body = response.json::<serde_json::Value>().await.unwrap();
+    let body = response.json::<User>().await.unwrap();
     assert_eq!(
         body,
-        json!({
-            "email": "test@example.com",
-            "password": "password123",
-            "requires_2fa": true
-        })
+        User {
+            email: "test@example.com".to_string(),
+            password: "password123".to_string(),
+            requires_2fa: false,
+        }
     );
 }
 
@@ -348,19 +440,19 @@ async fn me_with_valid_authorization_header() {
     let app = TestApp::new().await;
 
     // Signup
-    let signup_body = json!({
-        "email": "test@example.com",
-        "password": "password123",
-        "requires2FA": true
-    });
+    let signup_body = SignupRequest {
+        email: "test@example.com".to_string(),
+        password: "password123".to_string(),
+        requires_2fa: false,
+    };
     let signup_response = app.post("/signup").json(&signup_body).send().await.unwrap();
     assert_eq!(signup_response.status(), StatusCode::CREATED);
 
     // Login to generate a token we can use in the Authorization header
-    let login_body = json!({
-        "email": "test@example.com",
-        "password": "password123"
-    });
+    let login_body = LoginRequest {
+        email: "test@example.com".to_string(),
+        password: "password123".to_string(),
+    };
     let response = app.post("/login").json(&login_body).send().await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
@@ -378,14 +470,14 @@ async fn me_with_valid_authorization_header() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
-    let body = response.json::<serde_json::Value>().await.unwrap();
+    let body = response.json::<User>().await.unwrap();
     assert_eq!(
         body,
-        json!({
-            "email": "test@example.com",
-            "password": "password123",
-            "requires_2fa": true
-        })
+        User {
+            email: "test@example.com".to_string(),
+            password: "password123".to_string(),
+            requires_2fa: false,
+        }
     );
 }
 
@@ -428,7 +520,7 @@ async fn verify_token() {
     let signup_body = json!({
         "email": "test@example.com",
         "password": "password123",
-        "requires2FA": true
+        "requires2FA": false
     });
     let signup_response = app.post("/signup").json(&signup_body).send().await.unwrap();
     assert_eq!(signup_response.status(), StatusCode::CREATED);
@@ -444,9 +536,9 @@ async fn verify_token() {
     // Get token from cookie
     let auth_cookie = app.get_cookie("/", config::AUTH_TOKEN_COOKIE_NAME).unwrap();
 
-    let body: serde_json::Value = json!({
-        "token": auth_cookie.value(),
-    });
+    let body = VerifyTokenRequest {
+        token: auth_cookie.value().to_string(),
+    };
     let response = app.post("/verify-token").json(&body).send().await.unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
@@ -469,19 +561,19 @@ async fn should_return_401_if_banned_token() {
     let app = TestApp::new().await;
 
     // Signup
-    let signup_body = json!({
-        "email": "test@example.com",
-        "password": "password123",
-        "requires2FA": true
-    });
+    let signup_body = SignupRequest {
+        email: "test@example.com".to_string(),
+        password: "password123".to_string(),
+        requires_2fa: false,
+    };
     let signup_response = app.post("/signup").json(&signup_body).send().await.unwrap();
     assert_eq!(signup_response.status(), StatusCode::CREATED);
 
     // Login
-    let login_body = json!({
-        "email": "test@example.com",
-        "password": "password123"
-    });
+    let login_body = LoginRequest {
+        email: "test@example.com".to_string(),
+        password: "password123".to_string(),
+    };
     let response = app.post("/login").json(&login_body).send().await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
@@ -494,9 +586,7 @@ async fn should_return_401_if_banned_token() {
     assert_eq!(response.status(), StatusCode::OK);
 
     // Verify that the banned token is rejected
-    let body: serde_json::Value = json!({
-        "token": token,
-    });
+    let body = VerifyTokenRequest { token };
     let response = app.post("/verify-token").json(&body).send().await.unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }

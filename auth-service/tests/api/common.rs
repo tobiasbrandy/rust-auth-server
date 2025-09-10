@@ -1,36 +1,34 @@
 use std::sync::Arc;
-use tokio::sync::RwLock;
 
 use auth_service::{
-    Application,
-    api::app_state::AppState,
-    config,
-    persistence::{
-        BannedTokenStore, in_memory_banned_token_store::InMemoryBannedTokenStore,
+    api::app_state::AppState, config, persistence::{
+        in_memory_2fa_code_store::InMemory2FACodeStore,
+        in_memory_banned_token_store::InMemoryBannedTokenStore,
         in_memory_user_store::InMemoryUserStore,
-    },
+    }, service::email::mock_email_client::MockEmailClient, Application
 };
 
 pub struct TestApp {
+    pub state: AppState,
     pub address: String,
     pub url: reqwest::Url,
     pub cookies: Arc<reqwest_cookie_store::CookieStoreRwLock>,
-    pub http_client: reqwest::Client,
-    pub banned_token_store: Arc<RwLock<dyn BannedTokenStore>>,
+    pub client: reqwest::Client,
 }
 
 impl TestApp {
     pub async fn new() -> Self {
         let app_config = config::load_config("APP").expect("Failed to load config");
 
-        let banned_token_store = InMemoryBannedTokenStore::default();
+        let state = AppState::new(
+            app_config,
+            InMemoryUserStore::default(),
+            InMemoryBannedTokenStore::default(),
+            InMemory2FACodeStore::default(),
+            MockEmailClient,
+        );
 
-        let app_state = AppState::new(app_config, InMemoryUserStore::default(), banned_token_store);
-
-        // Clone the banned token store reference from app_state for testing
-        let banned_token_store_ref = app_state.banned_token_store.clone();
-
-        let app = Application::build("127.0.0.1:0", app_state)
+        let app = Application::build("127.0.0.1:0", state.clone())
             .await
             .expect("Failed to build app");
 
@@ -43,17 +41,17 @@ impl TestApp {
 
         let cookies = Arc::new(reqwest_cookie_store::CookieStoreRwLock::default());
 
-        let http_client = reqwest::Client::builder()
+        let client = reqwest::Client::builder()
             .cookie_provider(cookies.clone())
             .build()
             .expect("Failed to build http client");
 
         Self {
+            state,
             address,
             url,
             cookies,
-            http_client,
-            banned_token_store: banned_token_store_ref,
+            client,
         }
     }
 
@@ -93,7 +91,7 @@ impl TestApp {
     }
 
     pub fn request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
-        self.http_client
+        self.client
             .request(method, format!("{}{}", &self.address, path))
     }
 

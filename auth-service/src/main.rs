@@ -1,11 +1,9 @@
 use auth_service::{
-    Application,
-    api::app_state::AppState,
-    config::AppConfig,
-    persistence::{
+    api::app_state::AppState, config::AppConfig, persistence::{
+        in_memory_2fa_code_store::InMemory2FACodeStore,
         in_memory_banned_token_store::InMemoryBannedTokenStore,
         in_memory_user_store::InMemoryUserStore,
-    },
+    }, service::email::mock_email_client::MockEmailClient, Application
 };
 
 #[tokio::main]
@@ -16,6 +14,8 @@ async fn main() {
         app_config,
         InMemoryUserStore::default(),
         InMemoryBannedTokenStore::default(),
+        InMemory2FACodeStore::default(),
+        MockEmailClient,
     );
 
     let app = Application::build("0.0.0.0:80", app_state)

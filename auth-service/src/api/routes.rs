@@ -17,7 +17,10 @@ use crate::{
         middleware::auth::auth_middleware,
     },
     config,
-    models::user::User,
+    models::{
+        two_fa::{LoginAttemptId, TwoFACode},
+        user::User,
+    },
     service::auth::{self, Principal},
 };
 
@@ -67,7 +70,19 @@ impl IntoResponse for AuthAPIError {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Validate)]
+fn auth_cookie(auth_token: String) -> cookie::Cookie<'static> {
+    cookie::Cookie::build((config::AUTH_TOKEN_COOKIE_NAME, auth_token))
+        .path("/")
+        .http_only(true)
+        .secure(true)
+        .same_site(cookie::SameSite::Lax)
+        .max_age(::cookie::time::Duration::seconds(
+            auth::JWT_TTL.as_secs().try_into().unwrap(),
+        ))
+        .build()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Validate)]
 pub struct SignupRequest {
     #[validate(email)]
     pub email: String,
@@ -76,7 +91,7 @@ pub struct SignupRequest {
     #[serde(rename = "requires2FA")]
     pub requires_2fa: bool,
 }
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SignupResponse {
     pub message: String,
 }
@@ -103,12 +118,18 @@ async fn signup(
     ))
 }
 
-#[derive(Debug, Clone, Deserialize, Validate)]
+#[derive(Debug, Clone, Serialize, Deserialize, Validate)]
 pub struct LoginRequest {
     #[validate(email)]
     pub email: String,
     #[validate(length(min = 8))]
     pub password: String,
+}
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Login2FAResponse {
+    pub message: String,
+    pub login_attempt_id: LoginAttemptId,
 }
 async fn login(
     State(state): State<AppState>,
@@ -117,30 +138,83 @@ async fn login(
 ) -> Result<impl IntoResponse, AuthAPIError> {
     let user_store = state.user_store.read().await;
 
-    user_store
-        .validate_user(&body.email, &body.password)
+    let user = user_store
+        .get_user(&body.email)
         .await
         .map_err(|_| AuthAPIError::IncorrectCredentials)?;
+
+    if user.requires_2fa {
+        let login_attempt_id = LoginAttemptId::new();
+        let two_fa_code = TwoFACode::new();
+
+        state
+            .email_client
+            .send_email(&user.email, "2FA required", &login_attempt_id.to_string())
+            .await
+            .map_err(|_| AuthAPIError::UnexpectedError)?;
+
+        state
+            .two_fa_code_store
+            .write()
+            .await
+            .add_code(user.email, login_attempt_id.clone(), two_fa_code)
+            .await
+            .map_err(|_| AuthAPIError::UnexpectedError)?;
+
+        let response = Login2FAResponse {
+            message: "2FA required".to_string(),
+            login_attempt_id,
+        };
+        Ok((StatusCode::PARTIAL_CONTENT, Json(response)).into_response())
+    } else {
+        let auth_token =
+            auth::generate_auth_token(&state.config.auth, &body.email, config::APP_NAME)
+                .map_err(|_| AuthAPIError::IncorrectCredentials)?;
+
+        let jar = jar.add(auth_cookie(auth_token));
+
+        Ok((StatusCode::OK, jar).into_response())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Validate)]
+pub struct Verify2FARequest {
+    pub email: String,
+    pub login_attempt_id: LoginAttemptId,
+    #[serde(rename = "2FACode")]
+    pub code: TwoFACode,
+}
+async fn verify_2fa(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    Valid(Json(body)): Valid<Json<Verify2FARequest>>,
+) -> Result<impl IntoResponse, AuthAPIError> {
+    let (login_attempt_id, code) = state
+        .two_fa_code_store
+        .read()
+        .await
+        .get_code(&body.email)
+        .await
+        .map_err(|_| AuthAPIError::InvalidCredentials)?;
+
+    if login_attempt_id != body.login_attempt_id || code != body.code {
+        return Err(AuthAPIError::InvalidCredentials);
+    }
+
+    state
+        .two_fa_code_store
+        .write()
+        .await
+        .remove_code(&body.email)
+        .await
+        .map_err(|_| AuthAPIError::UnexpectedError)?;
 
     let auth_token = auth::generate_auth_token(&state.config.auth, &body.email, config::APP_NAME)
         .map_err(|_| AuthAPIError::IncorrectCredentials)?;
 
-    let jar = jar.add(
-        cookie::Cookie::build((config::AUTH_TOKEN_COOKIE_NAME, auth_token))
-            .path("/")
-            .http_only(true)
-            .secure(true)
-            .same_site(cookie::SameSite::Lax)
-            .max_age(::cookie::time::Duration::seconds(
-                auth::JWT_TTL.as_secs().try_into().unwrap(),
-            )),
-    );
+    let jar = jar.add(auth_cookie(auth_token));
 
-    Ok((StatusCode::OK, jar))
-}
-
-async fn verify_2fa() -> impl IntoResponse {
-    StatusCode::OK.into_response()
+    Ok((StatusCode::OK, jar).into_response())
 }
 
 async fn logout(
@@ -160,7 +234,7 @@ async fn logout(
     (StatusCode::OK, jar)
 }
 
-#[derive(Debug, Clone, Deserialize, Validate)]
+#[derive(Debug, Clone, Serialize, Deserialize, Validate)]
 pub struct VerifyTokenRequest {
     pub token: String,
 }
