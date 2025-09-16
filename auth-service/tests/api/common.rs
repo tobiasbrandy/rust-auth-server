@@ -1,11 +1,17 @@
 use std::sync::Arc;
 
+use auth_service::models::two_fa::{LoginAttemptId, TwoFACode};
+use auth_service::persistence::TwoFACodeStoreError;
 use auth_service::{
-    api::app_state::AppState, config, persistence::{
+    Application,
+    api::app_state::AppState,
+    config,
+    persistence::{
         in_memory_2fa_code_store::InMemory2FACodeStore,
         in_memory_banned_token_store::InMemoryBannedTokenStore,
         in_memory_user_store::InMemoryUserStore,
-    }, service::email::mock_email_client::MockEmailClient, Application
+    },
+    service::email::mock_email_client::MockEmailClient,
 };
 
 pub struct TestApp {
@@ -55,6 +61,23 @@ impl TestApp {
         }
     }
 
+    // --- Client Helpers --- //
+
+    pub fn request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
+        self.client
+            .request(method, format!("{}{}", &self.address, path))
+    }
+
+    pub fn get(&self, path: &str) -> reqwest::RequestBuilder {
+        self.request(reqwest::Method::GET, path)
+    }
+
+    pub fn post(&self, path: &str) -> reqwest::RequestBuilder {
+        self.request(reqwest::Method::POST, path)
+    }
+
+    // --- Cookie Helpers --- //
+
     pub fn add_cookie<'a, C>(&self, cookie: C)
     where
         C: Into<cookie::Cookie<'a>>,
@@ -75,6 +98,10 @@ impl TestApp {
             .map(|c| cookie::Cookie::from(c).into_owned())
     }
 
+    pub fn has_cookie(&self, path: &str, name: &str) -> bool {
+        self.get_cookie(path, name).is_some()
+    }
+
     #[allow(dead_code)]
     pub fn cookies(&'_ self) -> Vec<cookie::Cookie<'_>> {
         self.cookies
@@ -90,16 +117,23 @@ impl TestApp {
         self.cookies.write().unwrap().clear();
     }
 
-    pub fn request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
-        self.client
-            .request(method, format!("{}{}", &self.address, path))
+    // --- Store Helpers --- //
+
+    pub async fn get_2fa_code(&self, email: &str) -> Result<(LoginAttemptId, TwoFACode), TwoFACodeStoreError> {
+        self.state
+            .two_fa_code_store
+            .read()
+            .await
+            .get_code(email)
+            .await
     }
 
-    pub fn get(&self, path: &str) -> reqwest::RequestBuilder {
-        self.request(reqwest::Method::GET, path)
-    }
-
-    pub fn post(&self, path: &str) -> reqwest::RequestBuilder {
-        self.request(reqwest::Method::POST, path)
+    pub async fn has_banned_token(&self, token: &str) -> bool {
+        self.state
+            .banned_token_store
+            .read()
+            .await
+            .contains_token(token)
+            .await
     }
 }

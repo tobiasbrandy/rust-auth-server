@@ -30,4 +30,5 @@ askama = { version = "0.14.0" }
 
 # Test dependencies
 reqwest_cookie_store = { version = "0.9.0" }
+rstest = { version = "0.26.1" }
 

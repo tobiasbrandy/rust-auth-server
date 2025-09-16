@@ -1,50 +1,99 @@
 use auth_service::{
     api::routes::{
-        ErrorResponse, Login2FAResponse, LoginRequest, SignupRequest, SignupResponse,
-        Verify2FARequest, VerifyTokenRequest,
+        ErrorResponse, Login2FAResponse, LoginRequest, SignupRequest, Verify2FARequest,
+        VerifyTokenRequest, auth_cookie,
     },
     config,
     models::user::User,
-    service,
 };
 use axum::http::StatusCode;
+use rstest::rstest;
 use serde_json::json;
 
 use crate::common::TestApp;
 
-#[tokio::test]
-async fn root() {
-    let app = TestApp::new().await;
+// --- Fixtures --- //
 
+#[rstest::fixture]
+pub async fn app() -> TestApp {
+    TestApp::new().await
+}
+
+// --- Helpers --- //
+
+async fn create_user(app: &TestApp, user: User) -> User {
+    let response = app.post("/signup").json(&SignupRequest {
+        email: user.email.clone(),
+        password: user.password.clone(),
+        requires_2fa: user.requires_2fa,
+    }).send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+    response.json::<User>().await.unwrap()
+}
+
+async fn login_user(app: &TestApp, user: &User) {
+    let response = app
+        .post("/login")
+        .json(&LoginRequest {
+            email: user.email.clone(),
+            password: user.password.clone(),
+        })
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(app.has_cookie("/", config::AUTH_TOKEN_COOKIE_NAME));
+}
+
+async fn logout_user(app: &TestApp) {
+    let token = get_auth_token(app);
+
+    let response = app.post("/logout").send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    assert!(!app.has_cookie("/", config::AUTH_TOKEN_COOKIE_NAME));
+
+    assert!(app.has_banned_token(&token).await);
+}
+
+fn get_auth_token(app: &TestApp) -> String {
+    app.get_cookie("/", config::AUTH_TOKEN_COOKIE_NAME)
+        .unwrap()
+        .value()
+        .to_string()
+}
+
+// --- Tests --- //
+
+#[rstest]
+#[awt]
+#[tokio::test]
+async fn root(#[future] app: TestApp) {
     let response = app.get("/").send().await.unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(response.headers().get("content-type").unwrap(), "text/html");
 }
 
+#[rstest]
+#[awt]
 #[tokio::test]
-async fn signup() {
-    let app = TestApp::new().await;
-
-    let body = SignupRequest {
+async fn signup(#[future] app: TestApp) {
+    let user = User {
         email: "test@example.com".to_string(),
         password: "password123".to_string(),
         requires_2fa: true,
     };
 
-    let response = app.post("/signup").json(&body).send().await.unwrap();
-    assert_eq!(response.status(), StatusCode::CREATED);
-    let body = response.json::<SignupResponse>().await.unwrap();
-    assert_eq!(
-        body.message,
-        "User test@example.com created successfully!".to_string()
-    );
+    let created_user = create_user(&app, user.clone()).await;
+    assert_eq!(created_user, user);
 }
 
+#[rstest]
+#[awt]
 #[tokio::test]
-async fn signup_malformed_body() {
-    let app = TestApp::new().await;
-
+async fn signup_malformed_body(#[future] app: TestApp) {
     let body = json!({
         "password": "password123",
         "requires2FA": true
@@ -54,43 +103,22 @@ async fn signup_malformed_body() {
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
 
+#[rstest]
+#[awt]
+#[case(SignupRequest { email: "".to_string(), password: "password123".to_string(), requires_2fa: true })]
+#[case(SignupRequest { email: "invalid_email".to_string(), password: "password123".to_string(), requires_2fa: true })]
+#[case(SignupRequest { email: "valid_email@example.com".to_string(), password: "pass".to_string(), requires_2fa: true })]
 #[tokio::test]
-async fn signup_invalid_input() {
-    let invalid_inputs = vec![
-        // Empty email
-        SignupRequest {
-            email: "".to_string(),
-            password: "password123".to_string(),
-            requires_2fa: true,
-        },
-        // Email without @
-        SignupRequest {
-            email: "invalid_email".to_string(),
-            password: "password123".to_string(),
-            requires_2fa: true,
-        },
-        // Password less than 8 characters
-        SignupRequest {
-            email: "valid_email@example.com".to_string(),
-            password: "pass".to_string(),
-            requires_2fa: true,
-        },
-    ];
-
-    let app = TestApp::new().await;
-
-    for input in invalid_inputs {
-        let response = app.post("/signup").json(&input).send().await.unwrap();
-
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    }
+async fn signup_invalid_input(#[future] app: TestApp, #[case] input: SignupRequest) {
+    let response = app.post("/signup").json(&input).send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
+#[rstest]
+#[awt]
 #[tokio::test]
-async fn signup_email_already_exists() {
+async fn signup_email_already_exists(#[future] app: TestApp) {
     // Call the signup route twice. The second request should fail with a 409 HTTP status code
-    let app = TestApp::new().await;
-
     let body = SignupRequest {
         email: "test@example.com".to_string(),
         password: "password123".to_string(),
@@ -108,76 +136,71 @@ async fn signup_email_already_exists() {
     );
 }
 
+#[rstest]
+#[awt]
 #[tokio::test]
-async fn login() {
-    let app = TestApp::new().await;
+async fn login(#[future] app: TestApp) {
+    let user = create_user(
+        &app,
+        User {
+            email: "test@example.com".to_string(),
+            password: "password123".to_string(),
+            requires_2fa: false,
+        },
+    )
+    .await;
 
-    // First, create a user to login with
-    let signup_body = SignupRequest {
-        email: "test@example.com".to_string(),
-        password: "password123".to_string(),
-        requires_2fa: false,
-    };
+    let response = app
+        .post("/login")
+        .json(&LoginRequest {
+            email: user.email,
+            password: user.password,
+        })
+        .send()
+        .await
+        .unwrap();
 
-    let signup_response = app.post("/signup").json(&signup_body).send().await.unwrap();
-    assert_eq!(signup_response.status(), StatusCode::CREATED);
-
-    // Now test login with valid credentials
-    let login_body = LoginRequest {
-        email: "test@example.com".to_string(),
-        password: "password123".to_string(),
-    };
-
-    let response = app.post("/login").json(&login_body).send().await.unwrap();
-
-    assert!(
-        app.get_cookie("/", config::AUTH_TOKEN_COOKIE_NAME)
-            .is_some()
-    );
     assert_eq!(response.status(), StatusCode::OK);
+    assert!(app.has_cookie("/", config::AUTH_TOKEN_COOKIE_NAME));
 }
 
+#[rstest]
+#[awt]
 #[tokio::test]
-async fn login_2fa() {
-    let app = TestApp::new().await;
+async fn login_2fa(#[future] app: TestApp) {
+    let user = create_user(
+        &app,
+        User {
+            email: "test@example.com".to_string(),
+            password: "password123".to_string(),
+            requires_2fa: true,
+        },
+    )
+    .await;
 
-    // First, create a user to login with
-    let signup_body = SignupRequest {
-        email: "test@example.com".to_string(),
-        password: "password123".to_string(),
-        requires_2fa: true,
-    };
-
-    let signup_response = app.post("/signup").json(&signup_body).send().await.unwrap();
-    assert_eq!(signup_response.status(), StatusCode::CREATED);
-
-    // Now test login with valid credentials
-    let login_body = LoginRequest {
-        email: "test@example.com".to_string(),
-        password: "password123".to_string(),
-    };
-
-    let response = app.post("/login").json(&login_body).send().await.unwrap();
+    let response = app
+        .post("/login")
+        .json(&LoginRequest {
+            email: user.email,
+            password: user.password,
+        })
+        .send()
+        .await
+        .unwrap();
     assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+
     let body = response.json::<Login2FAResponse>().await.unwrap();
     assert_eq!(body.message, "2FA required");
     assert_eq!(
-        app.state
-            .two_fa_code_store
-            .read()
-            .await
-            .get_code("test@example.com")
-            .await
-            .unwrap()
-            .0,
+        app.get_2fa_code("test@example.com").await.unwrap().0,
         body.login_attempt_id
     );
 }
 
+#[rstest]
+#[awt]
 #[tokio::test]
-async fn login_malformed_body() {
-    let app = TestApp::new().await;
-
+async fn login_malformed_body(#[future] app: TestApp) {
     let body = json!({
         "password": "password123"
     });
@@ -186,45 +209,31 @@ async fn login_malformed_body() {
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
 
+#[rstest]
+#[awt]
+#[case(LoginRequest { email: "".to_string(), password: "password123".to_string() })]
+#[case(LoginRequest { email: "invalid_email".to_string(), password: "password123".to_string() })]
+#[case(LoginRequest { email: "valid_email@example.com".to_string(), password: "pass".to_string() })]
 #[tokio::test]
-async fn login_invalid_input() {
-    let invalid_inputs = vec![
-        // Empty email
-        LoginRequest {
-            email: "".to_string(),
-            password: "password123".to_string(),
-        },
-        // Email without @
-        LoginRequest {
-            email: "invalid_email".to_string(),
-            password: "password123".to_string(),
-        },
-        // Password less than 8 characters
-        LoginRequest {
-            email: "valid_email@example.com".to_string(),
-            password: "pass".to_string(),
-        },
-    ];
-
-    let app = TestApp::new().await;
-
-    for input in invalid_inputs {
-        let response = app.post("/login").json(&input).send().await.unwrap();
-
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    }
+async fn login_invalid_input(#[future] app: TestApp, #[case] input: LoginRequest) {
+    let response = app.post("/login").json(&input).send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
+#[rstest]
+#[awt]
 #[tokio::test]
-async fn login_user_does_not_exist() {
-    let app = TestApp::new().await;
+async fn login_user_does_not_exist(#[future] app: TestApp) {
+    let response = app
+        .post("/login")
+        .json(&LoginRequest {
+            email: "nonexistent@example.com".to_string(),
+            password: "password123".to_string(),
+        })
+        .send()
+        .await
+        .unwrap();
 
-    let body = LoginRequest {
-        email: "nonexistent@example.com".to_string(),
-        password: "password123".to_string(),
-    };
-
-    let response = app.post("/login").json(&body).send().await.unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     assert_eq!(
         response.json::<ErrorResponse>().await.unwrap().error,
@@ -232,66 +241,68 @@ async fn login_user_does_not_exist() {
     );
 }
 
+#[rstest]
+#[awt]
 #[tokio::test]
-async fn login_password_is_incorrect() {
-    let app = TestApp::new().await;
+async fn login_password_is_incorrect(#[future] app: TestApp) {
+    let user = create_user(
+        &app,
+        User {
+            email: "test@example.com".to_string(),
+            password: "password123".to_string(),
+            requires_2fa: false,
+        },
+    )
+    .await;
 
-    // First, create a user
-    let signup_body = SignupRequest {
-        email: "test@example.com".to_string(),
-        password: "password123".to_string(),
-        requires_2fa: false,
-    };
-
-    let signup_response = app.post("/signup").json(&signup_body).send().await.unwrap();
-    assert_eq!(signup_response.status(), StatusCode::CREATED);
-
-    // Now try to login with wrong password
-    let login_body = LoginRequest {
-        email: "test@example.com".to_string(),
-        password: "wrongpassword".to_string(),
-    };
-
-    let response = app.post("/login").json(&login_body).send().await.unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-}
-
-#[tokio::test]
-async fn verify_2fa() {
-    let app = TestApp::new().await;
-
-    // Create a user requiring 2FA
-    let signup_body = SignupRequest {
-        email: "twofa@example.com".to_string(),
-        password: "password123".to_string(),
-        requires_2fa: true,
-    };
-    let signup_response = app.post("/signup").json(&signup_body).send().await.unwrap();
-    assert_eq!(signup_response.status(), StatusCode::CREATED);
-
-    // Start login to generate login_attempt_id and send code
-    let login_body = LoginRequest {
-        email: "twofa@example.com".to_string(),
-        password: "password123".to_string(),
-    };
-    let response = app.post("/login").json(&login_body).send().await.unwrap();
-    assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
-    let body = response.json::<Login2FAResponse>().await.unwrap();
-
-    // Retrieve the stored code and use it to verify
-    let (login_attempt_id, code) = app
-        .state
-        .two_fa_code_store
-        .read()
-        .await
-        .get_code("twofa@example.com")
+    let response = app
+        .post("/login")
+        .json(&LoginRequest {
+            email: user.email,
+            password: "wrongpassword".to_string(),
+        })
+        .send()
         .await
         .unwrap();
 
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        response.json::<ErrorResponse>().await.unwrap().error,
+        "Incorrect credentials".to_string()
+    );
+}
+
+#[rstest]
+#[awt]
+#[tokio::test]
+async fn verify_2fa(#[future] app: TestApp) {
+    let user = create_user(
+        &app,
+        User {
+            email: "twofa@example.com".to_string(),
+            password: "password123".to_string(),
+            requires_2fa: true,
+        },
+    )
+    .await;
+
+    let response = app
+        .post("/login")
+        .json(&LoginRequest {
+            email: user.email.clone(),
+            password: user.password,
+        })
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+    let body = response.json::<Login2FAResponse>().await.unwrap();
+
+    let (login_attempt_id, code) = app.get_2fa_code(&user.email).await.unwrap();
     assert_eq!(login_attempt_id, body.login_attempt_id);
 
     let verify_body = Verify2FARequest {
-        email: "twofa@example.com".to_string(),
+        email: user.email,
         login_attempt_id,
         code,
     };
@@ -303,162 +314,99 @@ async fn verify_2fa() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
-    // Cookie should be set after successful verification
-    assert!(
-        app.get_cookie("/", config::AUTH_TOKEN_COOKIE_NAME)
-            .is_some()
-    );
+    assert!(app.has_cookie("/", config::AUTH_TOKEN_COOKIE_NAME));
 }
 
+#[rstest]
+#[awt]
 #[tokio::test]
-async fn logout() {
-    let app = TestApp::new().await;
+async fn logout(#[future] app: TestApp) {
+    let user = create_user(
+        &app,
+        User {
+            email: "test@example.com".to_string(),
+            password: "password123".to_string(),
+            requires_2fa: false,
+        },
+    )
+    .await;
 
-    // Signup
-    let signup_body = SignupRequest {
-        email: "test@example.com".to_string(),
-        password: "password123".to_string(),
-        requires_2fa: false,
-    };
-    let signup_response = app.post("/signup").json(&signup_body).send().await.unwrap();
-    assert_eq!(signup_response.status(), StatusCode::CREATED);
+    login_user(&app, &user).await;
 
-    // Login
-    let login_body = LoginRequest {
-        email: "test@example.com".to_string(),
-        password: "password123".to_string(),
-    };
-    let response = app.post("/login").json(&login_body).send().await.unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
+    let token = get_auth_token(&app);
 
-    // Verify that the cookie is added
-    let auth_cookie = app.get_cookie("/", config::AUTH_TOKEN_COOKIE_NAME).unwrap();
-    let token = auth_cookie.value().to_string();
+    assert!(!app.has_banned_token(&token).await);
 
-    // Verify token is not in banned store before logout
-    assert!(
-        !app.state
-            .banned_token_store
-            .read()
-            .await
-            .contains_token(&token)
-            .await
-    );
+    logout_user(&app).await;
 
-    // Logout
+    // Can't logout twice
     let response = app.post("/logout").send().await.unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-
-    // Verify that the cookie is removed
-    assert!(
-        app.get_cookie("/", config::AUTH_TOKEN_COOKIE_NAME)
-            .is_none()
-    );
-
-    // Verify token was added to banned store
-    assert!(
-        app.state
-            .banned_token_store
-            .read()
-            .await
-            .contains_token(&token)
-            .await
-    );
-
-    // Try to logout again
-    let response = app.post("/logout").send().await.unwrap();
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
+#[rstest]
+#[awt]
 #[tokio::test]
-async fn logout_missing_cookie() {
-    let app = TestApp::new().await;
-
+async fn logout_missing_cookie(#[future] app: TestApp) {
     let response = app.post("/logout").send().await.unwrap();
-
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
+#[rstest]
+#[awt]
 #[tokio::test]
-async fn logout_invalid_jwt() {
-    let app = TestApp::new().await;
-
-    app.add_cookie(
-        cookie::Cookie::build((config::AUTH_TOKEN_COOKIE_NAME, "invalid_jwt"))
-            .path("/")
-            .http_only(true)
-            .secure(true)
-            .same_site(cookie::SameSite::Lax)
-            .max_age(::cookie::time::Duration::seconds(
-                service::auth::JWT_TTL.as_secs().try_into().unwrap(),
-            )),
-    );
+async fn logout_invalid_jwt(#[future] app: TestApp) {
+    app.add_cookie(auth_cookie("invalid_jwt".to_string()));
 
     let response = app.post("/logout").send().await.unwrap();
 
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
+#[rstest]
+#[awt]
 #[tokio::test]
-async fn me_with_valid_cookie() {
-    let app = TestApp::new().await;
-
-    // Signup
-    let signup_body = SignupRequest {
-        email: "test@example.com".to_string(),
-        password: "password123".to_string(),
-        requires_2fa: false,
-    };
-    let signup_response = app.post("/signup").json(&signup_body).send().await.unwrap();
-    assert_eq!(signup_response.status(), StatusCode::CREATED);
-
-    // Login to receive auth cookie
-    let login_body = LoginRequest {
-        email: "test@example.com".to_string(),
-        password: "password123".to_string(),
-    };
-    let response = app.post("/login").json(&login_body).send().await.unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-
-    // Call /me using cookie-based auth
-    let response = app.get("/me").send().await.unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-
-    let body = response.json::<User>().await.unwrap();
-    assert_eq!(
-        body,
+async fn me_with_valid_cookie(#[future] app: TestApp) {
+    let user = create_user(
+        &app,
         User {
             email: "test@example.com".to_string(),
             password: "password123".to_string(),
             requires_2fa: false,
-        }
-    );
+        },
+    )
+    .await;
+
+    login_user(&app, &user).await;
+
+    // Call /me using cookie-based auth
+    let response = app.get("/me").send().await.unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.json::<User>().await.unwrap(), user);
 }
 
+#[rstest]
+#[awt]
 #[tokio::test]
-async fn me_with_valid_authorization_header() {
-    let app = TestApp::new().await;
+async fn me_with_valid_authorization_header(#[future] app: TestApp) {
+    let user = create_user(
+        &app,
+        User {
+            email: "test@example.com".to_string(),
+            password: "password123".to_string(),
+            requires_2fa: false,
+        },
+    )
+    .await;
 
-    // Signup
-    let signup_body = SignupRequest {
-        email: "test@example.com".to_string(),
-        password: "password123".to_string(),
-        requires_2fa: false,
-    };
-    let signup_response = app.post("/signup").json(&signup_body).send().await.unwrap();
-    assert_eq!(signup_response.status(), StatusCode::CREATED);
+    login_user(&app, &user).await;
 
-    // Login to generate a token we can use in the Authorization header
-    let login_body = LoginRequest {
-        email: "test@example.com".to_string(),
-        password: "password123".to_string(),
-    };
-    let response = app.post("/login").json(&login_body).send().await.unwrap();
+    let response = app.get("/me").send().await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
-    // Extract token from cookie
-    let auth_cookie = app.get_cookie("/", config::AUTH_TOKEN_COOKIE_NAME).unwrap();
-    let token = auth_cookie.value().to_string();
+    let token = get_auth_token(&app);
+
     app.clear_cookies();
 
     // Call /me using Authorization header (Bearer token)
@@ -470,84 +418,63 @@ async fn me_with_valid_authorization_header() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
-    let body = response.json::<User>().await.unwrap();
-    assert_eq!(
-        body,
-        User {
-            email: "test@example.com".to_string(),
-            password: "password123".to_string(),
-            requires_2fa: false,
-        }
-    );
+    assert_eq!(response.json::<User>().await.unwrap(), user);
 }
 
+#[rstest]
+#[awt]
 #[tokio::test]
-async fn me_missing_token() {
-    let app = TestApp::new().await;
-
+async fn me_missing_token(#[future] app: TestApp) {
     let response = app.get("/me").send().await.unwrap();
 
-    // Missing token should be treated as a bad request by the extractor
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    // Missing token should be treated as a unauthorized by the extractor
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
+#[rstest]
+#[awt]
 #[tokio::test]
-async fn me_invalid_token() {
-    let app = TestApp::new().await;
-
+async fn me_invalid_token(#[future] app: TestApp) {
     // Inject an invalid JWT cookie
-    app.add_cookie(
-        cookie::Cookie::build((config::AUTH_TOKEN_COOKIE_NAME, "invalid_jwt"))
-            .path("/")
-            .http_only(true)
-            .secure(true)
-            .same_site(cookie::SameSite::Lax)
-            .max_age(::cookie::time::Duration::seconds(
-                service::auth::JWT_TTL.as_secs().try_into().unwrap(),
-            )),
-    );
+    app.add_cookie(auth_cookie("invalid_jwt".to_string()));
 
     let response = app.get("/me").send().await.unwrap();
 
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
+#[rstest]
+#[awt]
 #[tokio::test]
-async fn verify_token() {
-    let app = TestApp::new().await;
+async fn verify_token(#[future] app: TestApp) {
+    let user = create_user(
+        &app,
+        User {
+            email: "test@example.com".to_string(),
+            password: "password123".to_string(),
+            requires_2fa: false,
+        },
+    )
+    .await;
 
-    // Signup
-    let signup_body = json!({
-        "email": "test@example.com",
-        "password": "password123",
-        "requires2FA": false
-    });
-    let signup_response = app.post("/signup").json(&signup_body).send().await.unwrap();
-    assert_eq!(signup_response.status(), StatusCode::CREATED);
+    login_user(&app, &user).await;
 
-    // Login
-    let login_body = json!({
-        "email": "test@example.com",
-        "password": "password123"
-    });
-    let response = app.post("/login").json(&login_body).send().await.unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
+    let token = get_auth_token(&app);
 
-    // Get token from cookie
-    let auth_cookie = app.get_cookie("/", config::AUTH_TOKEN_COOKIE_NAME).unwrap();
-
-    let body = VerifyTokenRequest {
-        token: auth_cookie.value().to_string(),
-    };
-    let response = app.post("/verify-token").json(&body).send().await.unwrap();
+    let response = app
+        .post("/verify-token")
+        .json(&VerifyTokenRequest { token })
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
 }
 
+#[rstest]
+#[awt]
 #[tokio::test]
-async fn verify_token_malformed_body() {
-    let app = TestApp::new().await;
-
+async fn verify_token_malformed_body(#[future] app: TestApp) {
     let body: serde_json::Value = json!({
         "nottoken": "test_token",
     });
@@ -556,37 +483,40 @@ async fn verify_token_malformed_body() {
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
 
+#[rstest]
+#[awt]
 #[tokio::test]
-async fn should_return_401_if_banned_token() {
-    let app = TestApp::new().await;
+async fn verify_token_invalid_token(#[future] app: TestApp) {
+    let response = app
+        .post("/verify-token")
+        .json(&VerifyTokenRequest { token: "invalid_token".to_string() })
+        .send()
+        .await
+        .unwrap();
 
-    // Signup
-    let signup_body = SignupRequest {
-        email: "test@example.com".to_string(),
-        password: "password123".to_string(),
-        requires_2fa: false,
-    };
-    let signup_response = app.post("/signup").json(&signup_body).send().await.unwrap();
-    assert_eq!(signup_response.status(), StatusCode::CREATED);
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
 
-    // Login
-    let login_body = LoginRequest {
-        email: "test@example.com".to_string(),
-        password: "password123".to_string(),
-    };
-    let response = app.post("/login").json(&login_body).send().await.unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
+#[rstest]
+#[awt]
+#[tokio::test]
+async fn should_return_401_if_banned_token(#[future] app: TestApp) {
+    let user = create_user(
+        &app,
+        User {
+            email: "test@example.com".to_string(),
+            password: "password123".to_string(),
+            requires_2fa: false,
+        },
+    )
+    .await;
 
-    // Get token from cookie
-    let auth_cookie = app.get_cookie("/", config::AUTH_TOKEN_COOKIE_NAME).unwrap();
-    let token = auth_cookie.value().to_string();
+    login_user(&app, &user).await;
 
-    // Logout to ban the token
-    let response = app.post("/logout").send().await.unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
+    let token = get_auth_token(&app);
 
-    // Verify that the banned token is rejected
-    let body = VerifyTokenRequest { token };
-    let response = app.post("/verify-token").json(&body).send().await.unwrap();
+    logout_user(&app).await;
+
+    let response = app.post("/verify-token").json(&VerifyTokenRequest { token }).send().await.unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }

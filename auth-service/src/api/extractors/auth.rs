@@ -31,7 +31,7 @@ where
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         <Self as OptionalFromRequestParts<S>>::from_request_parts(parts, state)
             .await?
-            .ok_or((StatusCode::BAD_REQUEST, "Missing token".to_string()))
+            .ok_or((StatusCode::UNAUTHORIZED, "Missing token".to_string()))
     }
 }
 

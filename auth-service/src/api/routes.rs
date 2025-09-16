@@ -45,7 +45,7 @@ pub enum AuthAPIError {
     InvalidToken,
     UnexpectedError,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ErrorResponse {
     pub error: String,
 }
@@ -70,7 +70,7 @@ impl IntoResponse for AuthAPIError {
     }
 }
 
-fn auth_cookie(auth_token: String) -> cookie::Cookie<'static> {
+pub fn auth_cookie(auth_token: String) -> cookie::Cookie<'static> {
     cookie::Cookie::build((config::AUTH_TOKEN_COOKIE_NAME, auth_token))
         .path("/")
         .http_only(true)
@@ -82,7 +82,7 @@ fn auth_cookie(auth_token: String) -> cookie::Cookie<'static> {
         .build()
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Validate)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Validate)]
 pub struct SignupRequest {
     #[validate(email)]
     pub email: String,
@@ -90,10 +90,6 @@ pub struct SignupRequest {
     pub password: String,
     #[serde(rename = "requires2FA")]
     pub requires_2fa: bool,
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SignupResponse {
-    pub message: String,
 }
 async fn signup(
     State(state): State<AppState>,
@@ -108,24 +104,20 @@ async fn signup(
             requires_2fa: body.requires_2fa,
         })
         .await
-        .map_err(|_| AuthAPIError::UserAlreadyExists)?;
+        .map_err(|_| AuthAPIError::UserAlreadyExists)?
+        .clone();
 
-    Ok((
-        StatusCode::CREATED,
-        Json(SignupResponse {
-            message: format!("User {} created successfully!", user.email),
-        }),
-    ))
+    Ok((StatusCode::CREATED, Json(user)))
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Validate)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Validate)]
 pub struct LoginRequest {
     #[validate(email)]
     pub email: String,
     #[validate(length(min = 8))]
     pub password: String,
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Login2FAResponse {
     pub message: String,
@@ -142,6 +134,10 @@ async fn login(
         .get_user(&body.email)
         .await
         .map_err(|_| AuthAPIError::IncorrectCredentials)?;
+
+    if user.password != body.password {
+        return Err(AuthAPIError::IncorrectCredentials);
+    }
 
     if user.requires_2fa {
         let login_attempt_id = LoginAttemptId::new();
@@ -168,8 +164,7 @@ async fn login(
         Ok((StatusCode::PARTIAL_CONTENT, Json(response)).into_response())
     } else {
         let auth_token =
-            auth::generate_auth_token(&state.config.auth, &body.email, config::APP_NAME)
-                .map_err(|_| AuthAPIError::IncorrectCredentials)?;
+            auth::generate_auth_token(&state.config.auth, &body.email, config::APP_NAME).unwrap();
 
         let jar = jar.add(auth_cookie(auth_token));
 
@@ -177,7 +172,7 @@ async fn login(
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Validate)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Validate)]
 pub struct Verify2FARequest {
     pub email: String,
     pub login_attempt_id: LoginAttemptId,
@@ -234,7 +229,7 @@ async fn logout(
     (StatusCode::OK, jar)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Validate)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Validate)]
 pub struct VerifyTokenRequest {
     pub token: String,
 }
