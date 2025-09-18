@@ -19,6 +19,7 @@ dotenvy = { workspace = true }
 config = { workspace = true }
 thiserror = { workspace = true }
 rand = { workspace = true }
+sqlx = { workspace = true }
 
 [dev-dependencies]
 reqwest = { workspace = true }

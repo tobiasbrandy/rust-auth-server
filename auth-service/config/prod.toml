@@ -1,0 +1,6 @@
+domain = "rust-auth.tobiasbrandy.com"
+host = "0.0.0.0"
+port = 80
+
+[db]
+host = "pg"

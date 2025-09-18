@@ -366,7 +366,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_auth_token_banned_token() {
         let config = create_test_auth_config();
-        let mut banned_token_store = InMemoryBannedTokenStore::default();
+        let banned_token_store = InMemoryBannedTokenStore::default();
         let email = "test@example.com";
         let app = "test-app";
 

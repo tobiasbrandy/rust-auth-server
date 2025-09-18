@@ -17,10 +17,7 @@ use crate::{
         middleware::auth::auth_middleware,
     },
     config,
-    models::{
-        two_fa::{LoginAttemptId, TwoFACode},
-        user::User,
-    },
+    models::two_fa::{LoginAttemptId, TwoFACode},
     service::auth::{self, Principal},
 };
 
@@ -95,14 +92,9 @@ async fn signup(
     State(state): State<AppState>,
     Valid(Json(body)): Valid<Json<SignupRequest>>,
 ) -> Result<impl IntoResponse, AuthAPIError> {
-    let mut user_store = state.user_store.write().await;
-
-    let user = user_store
-        .add_user(User {
-            email: body.email,
-            password: body.password,
-            requires_2fa: body.requires_2fa,
-        })
+    let user = state
+        .user_store
+        .add_user(body.email, body.password, body.requires_2fa)
         .await
         .map_err(|_| AuthAPIError::UserAlreadyExists)?
         .clone();
@@ -128,10 +120,9 @@ async fn login(
     jar: CookieJar,
     Valid(Json(body)): Valid<Json<LoginRequest>>,
 ) -> Result<impl IntoResponse, AuthAPIError> {
-    let user_store = state.user_store.read().await;
-
-    let user = user_store
-        .get_user(&body.email)
+    let user = state
+        .user_store
+        .get_user_by_email(&body.email)
         .await
         .map_err(|_| AuthAPIError::IncorrectCredentials)?;
 
@@ -151,8 +142,6 @@ async fn login(
 
         state
             .two_fa_code_store
-            .write()
-            .await
             .add_code(user.email, login_attempt_id.clone(), two_fa_code)
             .await
             .map_err(|_| AuthAPIError::UnexpectedError)?;
@@ -186,8 +175,6 @@ async fn verify_2fa(
 ) -> Result<impl IntoResponse, AuthAPIError> {
     let (login_attempt_id, code) = state
         .two_fa_code_store
-        .read()
-        .await
         .get_code(&body.email)
         .await
         .map_err(|_| AuthAPIError::InvalidCredentials)?;
@@ -198,8 +185,6 @@ async fn verify_2fa(
 
     state
         .two_fa_code_store
-        .write()
-        .await
         .remove_code(&body.email)
         .await
         .map_err(|_| AuthAPIError::UnexpectedError)?;
@@ -217,12 +202,7 @@ async fn logout(
     State(state): State<AppState>,
     jar: CookieJar,
 ) -> impl IntoResponse {
-    state
-        .banned_token_store
-        .write()
-        .await
-        .add_token(token.to_string())
-        .await;
+    state.banned_token_store.add_token(token.to_string()).await;
 
     let jar = jar.remove(cookie::Cookie::build(config::AUTH_TOKEN_COOKIE_NAME).path("/"));
 
@@ -239,7 +219,7 @@ async fn verify_token(
 ) -> Result<impl IntoResponse, AuthAPIError> {
     auth::validate_auth_token(
         &state.config.auth,
-        &*state.banned_token_store.read().await,
+        &*state.banned_token_store,
         &body.token,
         config::APP_NAME,
     )
@@ -253,7 +233,10 @@ async fn authed_user(
     Authorized(principal): Authorized<Principal>,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    let user_store = state.user_store.read().await;
-    let user = user_store.get_user(&principal.email).await.unwrap();
+    let user = state
+        .user_store
+        .get_user_by_email(&principal.email)
+        .await
+        .unwrap();
     (StatusCode::OK, Json(user))
 }

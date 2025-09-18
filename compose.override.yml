@@ -18,3 +18,10 @@ services:
       - "8080:80"
     volumes:
       - ./nginx.dev.conf:/etc/nginx/nginx.conf:ro
+
+  pg:
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: "rust_auth_db"
+      POSTGRES_PASSWORD: "postgres"

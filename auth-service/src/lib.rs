@@ -2,6 +2,7 @@ pub mod api;
 pub mod config;
 pub mod models;
 pub mod persistence;
+pub mod postgres;
 pub mod service;
 
 use axum::{Router, serve::Serve};
@@ -15,13 +16,11 @@ pub struct Application {
 }
 
 impl Application {
-    pub async fn build(
-        address: &str,
-        app_state: AppState,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    pub async fn build(app_state: AppState) -> Result<Self, Box<dyn std::error::Error>> {
+        let config = app_state.config.clone();
         let router = app_router(app_state);
 
-        let listener = tokio::net::TcpListener::bind(address).await?;
+        let listener = tokio::net::TcpListener::bind((config.host.as_str(), config.port)).await?;
         let address = listener.local_addr()?.to_string();
         let server = axum::serve(listener, router);
 

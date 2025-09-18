@@ -6,31 +6,40 @@ use crate::{
 };
 use async_trait::async_trait;
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct InMemory2FACodeStore {
-    codes: HashMap<String, (LoginAttemptId, TwoFACode)>,
-}
+#[derive(Debug, Default)]
+pub struct InMemory2FACodeStore(tokio::sync::RwLock<HashMap<String, (LoginAttemptId, TwoFACode)>>);
+
 #[async_trait]
 impl TwoFACodeStore for InMemory2FACodeStore {
     async fn add_code(
-        &mut self,
+        &self,
         email: String,
         login_attempt_id: LoginAttemptId,
         code: TwoFACode,
     ) -> Result<(), TwoFACodeStoreError> {
-        self.codes.insert(email, (login_attempt_id, code));
+        self.0.write().await.insert(email, (login_attempt_id, code));
         Ok(())
     }
 
-    async fn remove_code(&mut self, email: &str) -> Result<(), TwoFACodeStoreError> {
-        self.codes.remove(email).map(|_| ()).ok_or(TwoFACodeStoreError::LoginAttemptIdNotFound)
+    async fn remove_code(&self, email: &str) -> Result<(), TwoFACodeStoreError> {
+        self.0
+            .write()
+            .await
+            .remove(email)
+            .map(|_| ())
+            .ok_or(TwoFACodeStoreError::LoginAttemptIdNotFound)
     }
 
     async fn get_code(
         &self,
         email: &str,
     ) -> Result<(LoginAttemptId, TwoFACode), TwoFACodeStoreError> {
-        self.codes.get(email).cloned().ok_or(TwoFACodeStoreError::LoginAttemptIdNotFound)
+        self.0
+            .read()
+            .await
+            .get(email)
+            .cloned()
+            .ok_or(TwoFACodeStoreError::LoginAttemptIdNotFound)
     }
 }
 
@@ -40,7 +49,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_add_and_get_code() {
-        let mut store = InMemory2FACodeStore::default();
+        let store = InMemory2FACodeStore::default();
         let email = "test@example.com".to_string();
         let login_attempt_id = LoginAttemptId::new();
         let code = TwoFACode::new();
@@ -74,7 +83,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_remove_code() {
-        let mut store = InMemory2FACodeStore::default();
+        let store = InMemory2FACodeStore::default();
         let email = "test@example.com".to_string();
         let login_attempt_id = LoginAttemptId::new();
         let code = TwoFACode::new();
@@ -100,7 +109,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_remove_code_not_found() {
-        let mut store = InMemory2FACodeStore::default();
+        let store = InMemory2FACodeStore::default();
         let email = "nonexistent@example.com";
 
         let result = store.remove_code(email).await;
@@ -113,7 +122,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_overwrite_existing_code() {
-        let mut store = InMemory2FACodeStore::default();
+        let store = InMemory2FACodeStore::default();
         let email = "test@example.com".to_string();
 
         let first_login_attempt_id = LoginAttemptId::new();
@@ -146,7 +155,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_multiple_users() {
-        let mut store = InMemory2FACodeStore::default();
+        let store = InMemory2FACodeStore::default();
 
         let email1 = "user1@example.com".to_string();
         let login_attempt_id1 = LoginAttemptId::new();

@@ -34,7 +34,7 @@ pub async fn auth_middleware(
     // Validate auth token
     let claims = service::auth::validate_auth_token(
         &state.config.auth,
-        &*state.banned_token_store.read().await,
+        &*state.banned_token_store,
         &auth_token,
         config::APP_NAME,
     )

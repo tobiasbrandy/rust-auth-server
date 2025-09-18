@@ -19,51 +19,6 @@ pub async fn app() -> TestApp {
     TestApp::new().await
 }
 
-// --- Helpers --- //
-
-async fn create_user(app: &TestApp, user: User) -> User {
-    let response = app.post("/signup").json(&SignupRequest {
-        email: user.email.clone(),
-        password: user.password.clone(),
-        requires_2fa: user.requires_2fa,
-    }).send().await.unwrap();
-    assert_eq!(response.status(), StatusCode::CREATED);
-    response.json::<User>().await.unwrap()
-}
-
-async fn login_user(app: &TestApp, user: &User) {
-    let response = app
-        .post("/login")
-        .json(&LoginRequest {
-            email: user.email.clone(),
-            password: user.password.clone(),
-        })
-        .send()
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-    assert!(app.has_cookie("/", config::AUTH_TOKEN_COOKIE_NAME));
-}
-
-async fn logout_user(app: &TestApp) {
-    let token = get_auth_token(app);
-
-    let response = app.post("/logout").send().await.unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-
-    assert!(!app.has_cookie("/", config::AUTH_TOKEN_COOKIE_NAME));
-
-    assert!(app.has_banned_token(&token).await);
-}
-
-fn get_auth_token(app: &TestApp) -> String {
-    app.get_cookie("/", config::AUTH_TOKEN_COOKIE_NAME)
-        .unwrap()
-        .value()
-        .to_string()
-}
-
 // --- Tests --- //
 
 #[rstest]
@@ -80,13 +35,18 @@ async fn root(#[future] app: TestApp) {
 #[awt]
 #[tokio::test]
 async fn signup(#[future] app: TestApp) {
-    let user = User {
+    let mut user = User {
+        id: 1,
         email: "test@example.com".to_string(),
         password: "password123".to_string(),
         requires_2fa: true,
     };
 
-    let created_user = create_user(&app, user.clone()).await;
+    let created_user = app
+        .create_user(user.email.clone(), user.password.clone(), user.requires_2fa)
+        .await;
+    user.id = created_user.id;
+
     assert_eq!(created_user, user);
 }
 
@@ -140,15 +100,13 @@ async fn signup_email_already_exists(#[future] app: TestApp) {
 #[awt]
 #[tokio::test]
 async fn login(#[future] app: TestApp) {
-    let user = create_user(
-        &app,
-        User {
-            email: "test@example.com".to_string(),
-            password: "password123".to_string(),
-            requires_2fa: false,
-        },
-    )
-    .await;
+    let user = app
+        .create_user(
+            "test@example.com".to_string(),
+            "password123".to_string(),
+            false,
+        )
+        .await;
 
     let response = app
         .post("/login")
@@ -168,15 +126,13 @@ async fn login(#[future] app: TestApp) {
 #[awt]
 #[tokio::test]
 async fn login_2fa(#[future] app: TestApp) {
-    let user = create_user(
-        &app,
-        User {
-            email: "test@example.com".to_string(),
-            password: "password123".to_string(),
-            requires_2fa: true,
-        },
-    )
-    .await;
+    let user = app
+        .create_user(
+            "test@example.com".to_string(),
+            "password123".to_string(),
+            true,
+        )
+        .await;
 
     let response = app
         .post("/login")
@@ -245,15 +201,13 @@ async fn login_user_does_not_exist(#[future] app: TestApp) {
 #[awt]
 #[tokio::test]
 async fn login_password_is_incorrect(#[future] app: TestApp) {
-    let user = create_user(
-        &app,
-        User {
-            email: "test@example.com".to_string(),
-            password: "password123".to_string(),
-            requires_2fa: false,
-        },
-    )
-    .await;
+    let user = app
+        .create_user(
+            "test@example.com".to_string(),
+            "password123".to_string(),
+            false,
+        )
+        .await;
 
     let response = app
         .post("/login")
@@ -276,15 +230,13 @@ async fn login_password_is_incorrect(#[future] app: TestApp) {
 #[awt]
 #[tokio::test]
 async fn verify_2fa(#[future] app: TestApp) {
-    let user = create_user(
-        &app,
-        User {
-            email: "twofa@example.com".to_string(),
-            password: "password123".to_string(),
-            requires_2fa: true,
-        },
-    )
-    .await;
+    let user = app
+        .create_user(
+            "twofa@example.com".to_string(),
+            "password123".to_string(),
+            true,
+        )
+        .await;
 
     let response = app
         .post("/login")
@@ -321,23 +273,21 @@ async fn verify_2fa(#[future] app: TestApp) {
 #[awt]
 #[tokio::test]
 async fn logout(#[future] app: TestApp) {
-    let user = create_user(
-        &app,
-        User {
-            email: "test@example.com".to_string(),
-            password: "password123".to_string(),
-            requires_2fa: false,
-        },
-    )
-    .await;
+    let user = app
+        .create_user(
+            "test@example.com".to_string(),
+            "password123".to_string(),
+            false,
+        )
+        .await;
 
-    login_user(&app, &user).await;
+    app.login_user(&user).await;
 
-    let token = get_auth_token(&app);
+    let token = app.get_auth_token();
 
     assert!(!app.has_banned_token(&token).await);
 
-    logout_user(&app).await;
+    app.logout_user().await;
 
     // Can't logout twice
     let response = app.post("/logout").send().await.unwrap();
@@ -367,17 +317,15 @@ async fn logout_invalid_jwt(#[future] app: TestApp) {
 #[awt]
 #[tokio::test]
 async fn me_with_valid_cookie(#[future] app: TestApp) {
-    let user = create_user(
-        &app,
-        User {
-            email: "test@example.com".to_string(),
-            password: "password123".to_string(),
-            requires_2fa: false,
-        },
-    )
-    .await;
+    let user = app
+        .create_user(
+            "test@example.com".to_string(),
+            "password123".to_string(),
+            false,
+        )
+        .await;
 
-    login_user(&app, &user).await;
+    app.login_user(&user).await;
 
     // Call /me using cookie-based auth
     let response = app.get("/me").send().await.unwrap();
@@ -390,22 +338,20 @@ async fn me_with_valid_cookie(#[future] app: TestApp) {
 #[awt]
 #[tokio::test]
 async fn me_with_valid_authorization_header(#[future] app: TestApp) {
-    let user = create_user(
-        &app,
-        User {
-            email: "test@example.com".to_string(),
-            password: "password123".to_string(),
-            requires_2fa: false,
-        },
-    )
-    .await;
+    let user = app
+        .create_user(
+            "test@example.com".to_string(),
+            "password123".to_string(),
+            false,
+        )
+        .await;
 
-    login_user(&app, &user).await;
+    app.login_user(&user).await;
 
     let response = app.get("/me").send().await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
-    let token = get_auth_token(&app);
+    let token = app.get_auth_token();
 
     app.clear_cookies();
 
@@ -447,19 +393,17 @@ async fn me_invalid_token(#[future] app: TestApp) {
 #[awt]
 #[tokio::test]
 async fn verify_token(#[future] app: TestApp) {
-    let user = create_user(
-        &app,
-        User {
-            email: "test@example.com".to_string(),
-            password: "password123".to_string(),
-            requires_2fa: false,
-        },
-    )
-    .await;
+    let user = app
+        .create_user(
+            "test@example.com".to_string(),
+            "password123".to_string(),
+            false,
+        )
+        .await;
 
-    login_user(&app, &user).await;
+    app.login_user(&user).await;
 
-    let token = get_auth_token(&app);
+    let token = app.get_auth_token();
 
     let response = app
         .post("/verify-token")
@@ -489,7 +433,9 @@ async fn verify_token_malformed_body(#[future] app: TestApp) {
 async fn verify_token_invalid_token(#[future] app: TestApp) {
     let response = app
         .post("/verify-token")
-        .json(&VerifyTokenRequest { token: "invalid_token".to_string() })
+        .json(&VerifyTokenRequest {
+            token: "invalid_token".to_string(),
+        })
         .send()
         .await
         .unwrap();
@@ -501,22 +447,25 @@ async fn verify_token_invalid_token(#[future] app: TestApp) {
 #[awt]
 #[tokio::test]
 async fn should_return_401_if_banned_token(#[future] app: TestApp) {
-    let user = create_user(
-        &app,
-        User {
-            email: "test@example.com".to_string(),
-            password: "password123".to_string(),
-            requires_2fa: false,
-        },
-    )
-    .await;
+    let user = app
+        .create_user(
+            "test@example.com".to_string(),
+            "password123".to_string(),
+            false,
+        )
+        .await;
 
-    login_user(&app, &user).await;
+    app.login_user(&user).await;
 
-    let token = get_auth_token(&app);
+    let token = app.get_auth_token();
 
-    logout_user(&app).await;
+    app.logout_user().await;
 
-    let response = app.post("/verify-token").json(&VerifyTokenRequest { token }).send().await.unwrap();
+    let response = app
+        .post("/verify-token")
+        .json(&VerifyTokenRequest { token })
+        .send()
+        .await
+        .unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }

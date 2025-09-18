@@ -4,7 +4,7 @@ use config::Config;
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
-use crate::service;
+use crate::{postgres, service};
 
 pub const APP_NAME: &str = "auth-service";
 pub const AUTH_TOKEN_COOKIE_NAME: &str = "__Host-access_token";
@@ -12,6 +12,14 @@ pub const AUTH_TOKEN_COOKIE_NAME: &str = "__Host-access_token";
 #[derive(Debug, Clone, Deserialize, Validate)]
 pub struct AppConfig {
     pub env: AppEnv,
+
+    pub domain: String,
+    pub host: String,
+    pub port: u16,
+
+    #[validate(nested)]
+    pub db: postgres::PgConfig,
+
     #[validate(nested)]
     pub auth: service::auth::AuthConfig,
 }
@@ -27,18 +35,25 @@ pub fn load_config<'de, T: Deserialize<'de> + Validate>(
 ) -> Result<T, Box<dyn std::error::Error>> {
     let env = AppEnv::detect(env_prexif);
 
-    let mut env_vars = std::env::vars().collect::<HashMap<_, _>>();
+    let env_vars = {
+        let mut env_vars = std::env::vars().collect::<HashMap<_, _>>();
 
-    if let AppEnv::Dev = env
-        && let Ok(dotenv_iter) = dotenvy::dotenv_iter()
-    {
-        let env_overrides = dotenv_iter.collect::<Result<Vec<_>, _>>()?;
-        env_vars.extend(env_overrides);
-    }
+        if let AppEnv::Dev | AppEnv::Test = env
+            && let Ok(dotenv_iter) = dotenvy::dotenv_iter()
+        {
+            let env_overrides = dotenv_iter.collect::<Result<Vec<_>, _>>()?;
+            env_vars.extend(env_overrides);
+        }
 
-    env_vars.insert(format!("{env_prexif}__ENV"), env.to_string());
+        env_vars.insert(format!("{env_prexif}__ENV"), env.to_string());
+
+        env_vars
+    };
 
     let config = Config::builder()
+        .add_source(config::File::with_name("config/base"))
+        .add_source(config::File::with_name(&format!("config/{env}")).required(false))
+        .add_source(config::File::with_name("config/local").required(false))
         .add_source(
             config::Environment::with_prefix(env_prexif)
                 .separator("__")

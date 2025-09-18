@@ -7,6 +7,8 @@ services:
     environment:
       APP__ENV: ${APP__ENV:-dev}
       APP__AUTH__JWT_SECRETS: ${APP__AUTH__JWT_SECRETS:-'{}'}
+    depends_on:
+      - pg
 
   app-service:
     image: tobiasbrandy/app-service:latest
@@ -28,3 +30,18 @@ services:
     depends_on:
       - auth-service
       - app-service
+
+  pg:
+    image: postgres:17.6-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: "rust_auth_db"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-""}
+    expose:
+      - "5432"
+    volumes:
+      - pg:/var/lib/postgresql/data
+
+volumes:
+  pg:
+    driver: local

@@ -8,37 +8,65 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Default)]
-pub struct InMemoryUserStore {
-    users: HashMap<String, User>,
+struct InMemoryuserStoreState {
+    users_by_id: HashMap<i64, User>,
+    users_by_email: HashMap<String, User>,
+    id_gen: i64,
 }
+#[derive(Debug, Default)]
+pub struct InMemoryUserStore(tokio::sync::RwLock<InMemoryuserStoreState>);
 
 #[async_trait]
 impl UserStore for InMemoryUserStore {
-    async fn add_user(&mut self, user: User) -> Result<&User, UserStoreError> {
-        match self.users.entry(user.email.clone()) {
-            Entry::Occupied(_) => Err(UserStoreError::UserAlreadyExists),
-            Entry::Vacant(entry) => Ok(entry.insert(user)),
-        }
+    async fn add_user(
+        &self,
+        email: String,
+        password: String,
+        requires_2fa: bool,
+    ) -> Result<User, UserStoreError> {
+        let mut guard = self.0.write().await;
+
+        let id = guard.id_gen;
+        guard.id_gen += 1;
+
+        let user = User {
+            id,
+            email,
+            password,
+            requires_2fa,
+        };
+
+        match guard.users_by_id.entry(user.id) {
+            Entry::Occupied(_) => return Err(UserStoreError::UserAlreadyExists),
+            Entry::Vacant(entry) => entry.insert(user.clone()),
+        };
+
+        match guard.users_by_email.entry(user.email.clone()) {
+            Entry::Occupied(_) => return Err(UserStoreError::UserAlreadyExists),
+            Entry::Vacant(entry) => entry.insert(user.clone()),
+        };
+
+        Ok(user)
     }
 
-    async fn get_user(&self, email: &str) -> Result<User, UserStoreError> {
-        self.users
-            .get(email)
+    async fn get_user_by_id(&self, id: i64) -> Result<User, UserStoreError> {
+        self.0
+            .read()
+            .await
+            .users_by_id
+            .get(&id)
             .cloned()
             .ok_or(UserStoreError::UserNotFound)
     }
 
-    async fn validate_user(&self, email: &str, password: &str) -> Result<(), UserStoreError> {
-        match self.get_user(email).await {
-            Ok(user) => {
-                if user.password == password {
-                    Ok(())
-                } else {
-                    Err(UserStoreError::InvalidCredentials)
-                }
-            }
-            Err(err) => Err(err),
-        }
+    async fn get_user_by_email(&self, email: &str) -> Result<User, UserStoreError> {
+        self.0
+            .read()
+            .await
+            .users_by_email
+            .get(email)
+            .cloned()
+            .ok_or(UserStoreError::UserNotFound)
     }
 }
 
@@ -48,56 +76,54 @@ mod tests {
 
     #[tokio::test]
     async fn test_add_user() {
-        let mut store = InMemoryUserStore::default();
-        let user = User {
-            email: "test@example.com".to_string(),
-            password: "password".to_string(),
-            requires_2fa: false,
-        };
-        assert!(store.add_user(user.clone()).await.is_ok());
+        let store = InMemoryUserStore::default();
+        let email = "test@example.com".to_string();
+        let password_hash = "password".to_string();
+
+        assert!(
+            store
+                .add_user(email.clone(), password_hash.clone(), false)
+                .await
+                .is_ok()
+        );
         assert_eq!(
-            store.add_user(user).await,
+            store.add_user(email, password_hash, false).await,
             Err(UserStoreError::UserAlreadyExists)
         );
     }
 
     #[tokio::test]
-    async fn test_get_user() {
-        let mut store = InMemoryUserStore::default();
-        let user = User {
-            email: "test@example.com".to_string(),
-            password: "password".to_string(),
-            requires_2fa: false,
-        };
-        assert!(store.add_user(user.clone()).await.is_ok());
-        assert_eq!(store.get_user(&user.email).await, Ok(user));
+    async fn test_get_user_by_email() {
+        let store = InMemoryUserStore::default();
+        let email = "test@example.com".to_string();
+        let password_hash = "password".to_string();
+
+        let user = store
+            .add_user(email.clone(), password_hash.clone(), false)
+            .await
+            .unwrap();
+
+        assert_eq!(store.get_user_by_email(&email).await, Ok(user.clone()));
         assert_eq!(
-            store.get_user("nonexistent@example.com").await,
+            store.get_user_by_email("nonexistent@example.com").await,
             Err(UserStoreError::UserNotFound)
         );
     }
 
     #[tokio::test]
-    async fn test_validate_user() {
-        let mut store = InMemoryUserStore::default();
-        let user = User {
-            email: "test@example.com".to_string(),
-            password: "password".to_string(),
-            requires_2fa: false,
-        };
-        assert!(store.add_user(user.clone()).await.is_ok());
+    async fn test_get_user_by_id() {
+        let store = InMemoryUserStore::default();
+        let email = "test@example.com".to_string();
+        let password_hash = "password".to_string();
+
+        let user = store
+            .add_user(email.clone(), password_hash.clone(), false)
+            .await
+            .unwrap();
+
+        assert_eq!(store.get_user_by_id(user.id).await, Ok(user.clone()));
         assert_eq!(
-            store.validate_user(&user.email, &user.password).await,
-            Ok(())
-        );
-        assert_eq!(
-            store.validate_user(&user.email, "wrong_password").await,
-            Err(UserStoreError::InvalidCredentials)
-        );
-        assert_eq!(
-            store
-                .validate_user("nonexistent@example.com", &user.password)
-                .await,
+            store.get_user_by_id(user.id + 1).await,
             Err(UserStoreError::UserNotFound)
         );
     }

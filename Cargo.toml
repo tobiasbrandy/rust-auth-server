@@ -24,6 +24,11 @@ validator = { version = "0.20.0", features = ["derive"] }
 jsonwebtoken = { version = "9.1.1" }
 config = { version = "0.15.7" }
 dotenvy = { version = "0.15.7" }
+sqlx = { version = "0.8.3", features = [
+    "runtime-tokio-rustls",
+    "postgres",
+    "migrate",
+] }
 
 # App service specific
 askama = { version = "0.14.0" }
@@ -32,3 +37,5 @@ askama = { version = "0.14.0" }
 reqwest_cookie_store = { version = "0.9.0" }
 rstest = { version = "0.26.1" }
 
+[profile.dev.package.sqlx-macros]
+opt-level = 3

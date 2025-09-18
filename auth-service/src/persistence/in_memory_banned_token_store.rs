@@ -4,19 +4,17 @@ use async_trait::async_trait;
 
 use crate::persistence::BannedTokenStore;
 
-#[derive(Debug, Clone, Default)]
-pub struct InMemoryBannedTokenStore {
-    tokens: HashSet<String>,
-}
+#[derive(Debug, Default)]
+pub struct InMemoryBannedTokenStore(tokio::sync::RwLock<HashSet<String>>);
 
 #[async_trait]
 impl BannedTokenStore for InMemoryBannedTokenStore {
-    async fn add_token(&mut self, token: String) {
-        self.tokens.insert(token);
+    async fn add_token(&self, token: String) {
+        self.0.write().await.insert(token);
     }
 
     async fn contains_token(&self, token: &str) -> bool {
-        self.tokens.contains(token)
+        self.0.read().await.contains(token)
     }
 }
 
@@ -26,7 +24,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_store_token() {
-        let mut store = InMemoryBannedTokenStore::default();
+        let store = InMemoryBannedTokenStore::default();
         let token = "test_token".to_string();
 
         store.add_token(token.clone()).await;
@@ -43,7 +41,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_store_multiple_tokens() {
-        let mut store = InMemoryBannedTokenStore::default();
+        let store = InMemoryBannedTokenStore::default();
         let token1 = "token1".to_string();
         let token2 = "token2".to_string();
 
@@ -57,7 +55,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_store_duplicate_token() {
-        let mut store = InMemoryBannedTokenStore::default();
+        let store = InMemoryBannedTokenStore::default();
         let token = "duplicate_token".to_string();
 
         store.add_token(token.clone()).await;
