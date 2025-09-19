@@ -1,4 +1,8 @@
+# CI/CD test environment
+
 [db]
+user = "postgres"
+database = "postgres"
 password = "postgres"
 max_connections = 1000
 

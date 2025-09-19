@@ -8,7 +8,7 @@ password = ""
 host = "localhost"
 port = 5432
 database = "rust_auth_db"
-max_connections = 5
+max_connections = 10
 
 [auth]
 jwt_secrets = {}

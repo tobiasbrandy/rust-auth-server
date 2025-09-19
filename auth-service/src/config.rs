@@ -56,6 +56,7 @@ pub fn load_config<'de, T: Deserialize<'de> + Validate>(
         .add_source(config::File::with_name("config/local").required(false))
         .add_source(
             config::Environment::with_prefix(env_prexif)
+                .prefix_separator("_")
                 .separator("__")
                 .source(Some(env_vars)),
         )
@@ -76,10 +77,10 @@ pub enum AppEnv {
 }
 impl AppEnv {
     pub fn detect(env_prefix: &str) -> Self {
-        match std::env::var(format!("{env_prefix}__ENV")) {
+        match std::env::var(format!("{env_prefix}_ENV")) {
             Ok(env) => env
                 .parse()
-                .unwrap_or_else(|s| panic!("Invalid {env_prefix}__ENV: {s}")),
+                .unwrap_or_else(|s| panic!("Invalid {env_prefix}_ENV: {s}")),
             Err(_) => AppEnv::Dev,
         }
     }

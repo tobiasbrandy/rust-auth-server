@@ -25,7 +25,7 @@ WORKDIR /app
 COPY --from=builder /app/target/release/auth-service /usr/local/bin/
 COPY --from=builder /app/auth-service/assets ./assets
 COPY --from=builder /app/auth-service/config ./config
-ENV APP__HOME=.
+COPY --from=builder /app/auth-service/migrations ./migrations
 EXPOSE 80
 CMD ["auth-service"]
 

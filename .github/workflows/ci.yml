@@ -5,13 +5,36 @@ on:
     branches: [main]
   workflow_call:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
+  SQLX_VERSION: 0.8.6
+  SQLX_OFFLINE: true
 
 jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.6-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -19,14 +42,24 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install sqlx-cli
+        run:
+          cargo install sqlx-cli
+          --version=${{ env.SQLX_VERSION }}
+          --features rustls,postgres
+          --no-default-features
+          --locked
+
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
 
+      - name: Check that queries are fresh
+        run: cd auth-service && cargo sqlx prepare --check -- --all-targets
+
       - name: Run tests
-        run: |
-          export APP__ENV=test
-          export APP__AUTH__JWT_SECRETS=${{ secrets.APP__AUTH__JWT_SECRETS }}
-          cargo test --verbose --workspace
+        env:
+          APP_ENV: test
+        run: cargo test --verbose --workspace --all-features
 
   fmt:
     name: Rustfmt
