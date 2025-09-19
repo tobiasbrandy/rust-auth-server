@@ -7,6 +7,7 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-dev}
       APP_AUTH__JWT_SECRETS: ${APP_AUTH__JWT_SECRETS:-'{}'}
+      APP_DB__PASSWORD: ${APP_DB__PASSWORD:-postgres}
     depends_on:
       - pg
 
