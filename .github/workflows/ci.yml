@@ -42,6 +42,9 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
       - name: Install sqlx-cli
         run:
           cargo install sqlx-cli
@@ -49,9 +52,6 @@ jobs:
           --features rustls,postgres
           --no-default-features
           --locked
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
 
       - name: Check that queries are fresh
         run: cd auth-service && cargo sqlx prepare --check -- --all-targets
