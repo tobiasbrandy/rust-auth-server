@@ -37,9 +37,6 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
 
-      - name: Build workspace code
-        run: cargo build --release --workspace
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
