@@ -358,17 +358,16 @@ impl Janitor {
         match job {
             JanitorJob::CreateDb(db_name, ack_tx) => {
                 sqlx::query(
-                    format!(
-                        r#"CREATE DATABASE "{db_name}" TEMPLATE "{template_db}""#
-                    )
-                    .as_str(),
+                    format!(r#"CREATE DATABASE "{db_name}" TEMPLATE "{template_db}""#).as_str(),
                 )
                 .execute(&pool)
                 .await
                 .map(|_| println!("Created database: {db_name}"))
                 .unwrap_or_else(|e| panic!("Janitor: Failed to create database {db_name}: {e}"));
 
-                ack_tx.send(()).unwrap_or_else(|_| eprintln!("Janitor: Failed to send ack"));
+                ack_tx
+                    .send(())
+                    .unwrap_or_else(|_| eprintln!("Janitor: Failed to send ack"));
             }
             JanitorJob::DropDb(db_name) => {
                 sqlx::query(format!(r#"DROP DATABASE IF EXISTS "{db_name}" WITH (FORCE)"#).as_str())
