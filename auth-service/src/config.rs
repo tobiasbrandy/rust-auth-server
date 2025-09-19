@@ -45,7 +45,7 @@ pub fn load_config<'de, T: Deserialize<'de> + Validate>(
             env_vars.extend(env_overrides);
         }
 
-        env_vars.insert(format!("{env_prexif}__ENV"), env.to_string());
+        env_vars.insert(format!("{env_prexif}_ENV"), env.to_string());
 
         env_vars
     };
