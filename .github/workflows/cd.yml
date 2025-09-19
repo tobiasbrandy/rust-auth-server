@@ -87,6 +87,7 @@ jobs:
             cd ~
             export APP_ENV=prod
             export APP_AUTH__JWT_SECRETS=${{ secrets.APP_AUTH__JWT_SECRETS }}
+            export APP_DB__PASSWORD=${{ secrets.APP_DB__PASSWORD }}
             docker compose down
             docker compose pull
             docker compose up -d

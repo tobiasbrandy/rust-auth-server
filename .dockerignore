@@ -4,7 +4,7 @@
 
 # Docker files (don't copy into build context)  
 Dockerfile*
-docker-compose*.yml
+compose*.yml
 
 # Documentation
 README.md
