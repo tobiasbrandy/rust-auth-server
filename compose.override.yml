@@ -23,5 +23,4 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_DB: "rust_auth_db"
       POSTGRES_PASSWORD: "postgres"
