@@ -32,7 +32,7 @@ impl UserStore for InMemoryUserStore {
         let user = User {
             id,
             email,
-            password,
+            password: password.into(),
             requires_2fa,
         };
 
@@ -86,10 +86,10 @@ mod tests {
                 .await
                 .is_ok()
         );
-        assert_eq!(
+        assert!(matches!(
             store.add_user(email, password_hash, false).await,
             Err(UserStoreError::UserAlreadyExists)
-        );
+        ));
     }
 
     #[tokio::test]
@@ -103,11 +103,11 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(store.get_user_by_email(&email).await, Ok(user.clone()));
-        assert_eq!(
+        assert_eq!(store.get_user_by_email(&email).await.unwrap(), user.clone());
+        assert!(matches!(
             store.get_user_by_email("nonexistent@example.com").await,
             Err(UserStoreError::UserNotFound)
-        );
+        ));
     }
 
     #[tokio::test]
@@ -121,10 +121,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(store.get_user_by_id(user.id).await, Ok(user.clone()));
-        assert_eq!(
+        assert_eq!(store.get_user_by_id(user.id).await.unwrap(), user.clone());
+        assert!(matches!(
             store.get_user_by_id(user.id + 1).await,
             Err(UserStoreError::UserNotFound)
-        );
+        ));
     }
 }

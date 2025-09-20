@@ -1,3 +1,4 @@
+use anyhow::Context;
 use axum::{
     Json, Router,
     extract::State,
@@ -7,6 +8,7 @@ use axum::{
     routing::{get, post},
 };
 use axum_extra::extract::{CookieJar, cookie};
+use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
@@ -33,37 +35,44 @@ pub fn api_router(app_state: AppState) -> Router {
         .layer(middleware::from_fn_with_state(app_state, auth_middleware))
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, thiserror::Error)]
 pub enum AuthAPIError {
+    #[error("User already exists")]
     UserAlreadyExists,
+    #[error("Invalid credentials")]
     InvalidCredentials,
+    #[error("Incorrect credentials")]
     IncorrectCredentials,
+    #[error("Missing token")]
     MissingToken,
+    #[error("Invalid token")]
     InvalidToken,
-    UnexpectedError,
+    #[error("Unexpected error")]
+    UnexpectedError(#[from] anyhow::Error),
 }
+impl AuthAPIError {
+    pub fn status_code(&self) -> StatusCode {
+        match self {
+            AuthAPIError::UserAlreadyExists => StatusCode::CONFLICT,
+            AuthAPIError::InvalidCredentials => StatusCode::BAD_REQUEST,
+            AuthAPIError::MissingToken => StatusCode::BAD_REQUEST,
+            AuthAPIError::InvalidToken => StatusCode::UNAUTHORIZED,
+            AuthAPIError::IncorrectCredentials => StatusCode::UNAUTHORIZED,
+            AuthAPIError::UnexpectedError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ErrorResponse {
     pub error: String,
 }
 impl IntoResponse for AuthAPIError {
     fn into_response(self) -> Response {
-        let (status, error_message) = match self {
-            AuthAPIError::UserAlreadyExists => (StatusCode::CONFLICT, "User already exists"),
-            AuthAPIError::InvalidCredentials => (StatusCode::BAD_REQUEST, "Invalid credentials"),
-            AuthAPIError::MissingToken => (StatusCode::BAD_REQUEST, "Missing token"),
-            AuthAPIError::InvalidToken => (StatusCode::UNAUTHORIZED, "Invalid token"),
-            AuthAPIError::IncorrectCredentials => {
-                (StatusCode::UNAUTHORIZED, "Incorrect credentials")
-            }
-            AuthAPIError::UnexpectedError => {
-                (StatusCode::INTERNAL_SERVER_ERROR, "Unexpected error")
-            }
-        };
         let body = Json(ErrorResponse {
-            error: error_message.to_string(),
+            error: self.to_string(),
         });
-        (status, body).into_response()
+        (self.status_code(), body).into_response()
     }
 }
 
@@ -92,12 +101,15 @@ async fn signup(
     State(state): State<AppState>,
     Valid(Json(body)): Valid<Json<SignupRequest>>,
 ) -> Result<impl IntoResponse, AuthAPIError> {
+    let password_hash = tokio::task::spawn_blocking(move || auth::hash_password(&body.password))
+        .await
+        .context("Failed to hash password")??;
+
     let user = state
         .user_store
-        .add_user(body.email, body.password, body.requires_2fa)
+        .add_user(body.email, password_hash, body.requires_2fa)
         .await
-        .map_err(|_| AuthAPIError::UserAlreadyExists)?
-        .clone();
+        .map_err(|_| AuthAPIError::UserAlreadyExists)?;
 
     Ok((StatusCode::CREATED, Json(user)))
 }
@@ -126,9 +138,10 @@ async fn login(
         .await
         .map_err(|_| AuthAPIError::IncorrectCredentials)?;
 
-    if user.password != body.password {
-        return Err(AuthAPIError::IncorrectCredentials);
-    }
+    tokio::task::spawn_blocking(move || auth::verify_password(user.password.expose_secret(), &body.password))
+        .await
+        .context("Failed to verify password")?
+        .map_err(|_| AuthAPIError::IncorrectCredentials)?;
 
     if user.requires_2fa {
         let login_attempt_id = LoginAttemptId::new();
@@ -138,13 +151,13 @@ async fn login(
             .email_client
             .send_email(&user.email, "2FA required", &login_attempt_id.to_string())
             .await
-            .map_err(|_| AuthAPIError::UnexpectedError)?;
+            .map_err(|e| anyhow::anyhow!(e))?;
 
         state
             .two_fa_code_store
             .add_code(user.email, login_attempt_id.clone(), two_fa_code)
             .await
-            .map_err(|_| AuthAPIError::UnexpectedError)?;
+            .context("Failed to add 2FA code")?;
 
         let response = Login2FAResponse {
             message: "2FA required".to_string(),
@@ -187,7 +200,7 @@ async fn verify_2fa(
         .two_fa_code_store
         .remove_code(&body.email)
         .await
-        .map_err(|_| AuthAPIError::UnexpectedError)?;
+        .context("Failed to remove 2FA code")?;
 
     let auth_token = auth::generate_auth_token(&state.config.auth, &body.email, config::APP_NAME)
         .map_err(|_| AuthAPIError::IncorrectCredentials)?;

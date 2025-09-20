@@ -9,12 +9,16 @@ use crate::models::{
 };
 use async_trait::async_trait;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, thiserror::Error)]
 pub enum UserStoreError {
+    #[error("User already exists")]
     UserAlreadyExists,
+    #[error("User not found")]
     UserNotFound,
+    #[error("Invalid credentials")]
     InvalidCredentials,
-    UnexpectedError,
+    #[error(transparent)]
+    UnexpectedError(#[from] anyhow::Error),
 }
 
 #[async_trait]
@@ -38,10 +42,12 @@ pub trait BannedTokenStore: std::fmt::Debug + Send + Sync {
     async fn contains_token(&self, token: &str) -> bool;
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, thiserror::Error)]
 pub enum TwoFACodeStoreError {
+    #[error("Login attempt id not found")]
     LoginAttemptIdNotFound,
-    UnexpectedError,
+    #[error(transparent)]
+    UnexpectedError(#[from] anyhow::Error),
 }
 
 #[async_trait]

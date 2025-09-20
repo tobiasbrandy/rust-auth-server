@@ -1,3 +1,4 @@
+use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use sqlx::{
     Connection, PgConnection, PgPool,
@@ -10,8 +11,8 @@ use validator::Validate;
 pub struct PgConfig {
     #[validate(length(min = 1))]
     pub user: String,
-    #[validate(length(min = 1))]
-    pub password: String,
+    #[serde(skip_serializing)]
+    pub password: SecretString,
     #[validate(length(min = 1))]
     pub host: String,
     pub port: u16,
@@ -23,7 +24,7 @@ impl Default for PgConfig {
     fn default() -> Self {
         Self {
             user: "postgres".to_string(),
-            password: "".to_string(),
+            password: "".into(),
             host: "localhost".to_string(),
             port: 5432,
             database: "rust_auth_db".to_string(),
@@ -39,7 +40,7 @@ impl PgConfig {
             "{PROTOCOL}://{user}:{password}@{host}:{port}",
             PROTOCOL = Self::PROTOCOL,
             user = self.user,
-            password = self.password,
+            password = self.password.expose_secret(),
             host = self.host,
             port = self.port,
         )
@@ -54,7 +55,7 @@ impl PgConfig {
             .host(&self.host)
             .port(self.port)
             .username(&self.user)
-            .password(&self.password)
+            .password(self.password.expose_secret())
     }
 
     pub fn connection_options(&self) -> PgConnectOptions {

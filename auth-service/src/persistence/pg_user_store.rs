@@ -1,3 +1,4 @@
+use anyhow::Context;
 use async_trait::async_trait;
 use sqlx::PgPool;
 
@@ -25,7 +26,7 @@ impl UserStore for PgUserStore {
         password: String,
         requires_2fa: bool,
     ) -> Result<User, UserStoreError> {
-        sqlx::query_as!(
+        Ok(sqlx::query_as!(
             User,
             "
             INSERT INTO users (email, password, requires_2fa)
@@ -38,15 +39,14 @@ impl UserStore for PgUserStore {
         )
         .fetch_one(&self.pool)
         .await
-        .inspect_err(|e| println!("Failed to add user: {e}"))
-        .map_err(|_| UserStoreError::UnexpectedError)
+        .context("Failed to add user")?)
     }
 
     async fn get_user_by_id(&self, id: i64) -> Result<User, UserStoreError> {
         sqlx::query_as!(User, "SELECT * FROM users WHERE id = $1", id)
             .fetch_optional(&self.pool)
             .await
-            .map_err(|_| UserStoreError::UnexpectedError)?
+            .context("Failed to get user by id")?
             .ok_or(UserStoreError::UserNotFound)
     }
 
@@ -54,7 +54,7 @@ impl UserStore for PgUserStore {
         sqlx::query_as!(User, "SELECT * FROM users WHERE email = $1", email)
             .fetch_optional(&self.pool)
             .await
-            .map_err(|_| UserStoreError::UnexpectedError)?
+            .context("Failed to get user by email")?
             .ok_or(UserStoreError::UserNotFound)
     }
 }

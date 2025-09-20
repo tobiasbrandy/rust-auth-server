@@ -20,6 +20,9 @@ config = { workspace = true }
 thiserror = { workspace = true }
 rand = { workspace = true }
 sqlx = { workspace = true }
+argon2 = { workspace = true }
+anyhow = { workspace = true }
+secrecy = { workspace = true }
 
 [dev-dependencies]
 reqwest = { workspace = true }

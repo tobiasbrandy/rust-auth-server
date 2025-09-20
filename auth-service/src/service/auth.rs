@@ -1,5 +1,6 @@
 use std::{collections::HashMap, ops::Add};
 
+use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
@@ -10,8 +11,8 @@ pub const JWT_TTL: std::time::Duration = std::time::Duration::from_secs(15 * 60)
 const JWT_LEEWAY_SECONDS: u64 = 60;
 const JWT_ALGORITHM: jsonwebtoken::Algorithm = jsonwebtoken::Algorithm::HS256;
 
-#[derive(Clone, Deserialize, Validate)]
-#[serde(from = "AuthConfigRepr")]
+#[derive(Clone, Serialize, Deserialize, Validate)]
+#[serde(from = "AuthConfigRepr", into = "AuthConfigRepr")]
 pub struct AuthConfig {
     #[validate(length(min = 1))]
     jwt_secrets: HashMap<u64, String>,
@@ -59,17 +60,15 @@ impl AuthConfig {
 }
 impl std::fmt::Debug for AuthConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("AuthConfig")
-            .field("jwt_secrets", &self.jwt_secrets)
-            .finish()
+        f.debug_struct("AuthConfig").finish()
     }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct AuthConfigRepr {
-    #[serde(deserialize_with = "de_jwt_secrets")]
-    jwt_secrets: HashMap<u64, String>,
+    #[serde(deserialize_with = "de_jwt_secrets", skip_serializing)]
+    jwt_secrets: HashMap<u64, SecretString>,
 }
-fn de_jwt_secrets<'de, D>(deserializer: D) -> Result<HashMap<u64, String>, D::Error>
+fn de_jwt_secrets<'de, D>(deserializer: D) -> Result<HashMap<u64, SecretString>, D::Error>
 where
     D: serde::de::Deserializer<'de>,
 {
@@ -83,16 +82,31 @@ where
     match MapEither::deserialize(deserializer)? {
         MapEither::Map(m) => Ok(m
             .into_iter()
-            .map(|(k, v)| Ok((k.parse().map_err(serde::de::Error::custom)?, v)))
+            .map(|(k, v)| Ok((k.parse().map_err(serde::de::Error::custom)?, v.into())))
             .collect::<Result<_, _>>()?),
         MapEither::Str(s) => {
-            serde_json::from_str::<HashMap<u64, String>>(&s).map_err(serde::de::Error::custom)
+            serde_json::from_str::<HashMap<u64, SecretString>>(&s).map_err(serde::de::Error::custom)
         }
     }
 }
 impl From<AuthConfigRepr> for AuthConfig {
     fn from(AuthConfigRepr { jwt_secrets }: AuthConfigRepr) -> Self {
-        AuthConfig::new(jwt_secrets)
+        AuthConfig::new(
+            jwt_secrets
+                .into_iter()
+                .map(|(k, v)| (k, v.expose_secret().to_string()))
+                .collect(),
+        )
+    }
+}
+impl From<AuthConfig> for AuthConfigRepr {
+    fn from(AuthConfig { jwt_secrets, .. }: AuthConfig) -> Self {
+        AuthConfigRepr {
+            jwt_secrets: jwt_secrets
+                .into_iter()
+                .map(|(k, v)| (k, v.into()))
+                .collect(),
+        }
     }
 }
 
@@ -189,6 +203,23 @@ pub async fn validate_auth_token(
         .ok_or(AuthTokenValidationError::InvalidKid)?;
 
     Ok(jsonwebtoken::decode::<Claims>(token, decoding_key, &validation)?.claims)
+}
+
+pub fn hash_password(password: &str) -> anyhow::Result<String> {
+    Ok(argon2::password_hash::PasswordHasher::hash_password(
+        &argon2::Argon2::default(),
+        password.as_bytes(),
+        &argon2::password_hash::SaltString::generate(&mut argon2::password_hash::rand_core::OsRng),
+    )?
+    .to_string())
+}
+
+pub fn verify_password(hash: &str, password: &str) -> anyhow::Result<()> {
+    Ok(argon2::password_hash::PasswordVerifier::verify_password(
+        &argon2::Argon2::default(),
+        password.as_bytes(),
+        &argon2::password_hash::PasswordHash::new(hash)?,
+    )?)
 }
 
 #[cfg(test)]

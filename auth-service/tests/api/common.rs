@@ -190,13 +190,10 @@ impl TestApp {
         response.json::<User>().await.unwrap()
     }
 
-    pub async fn login_user(&self, user: &User) {
+    pub async fn login_user(&self, email: String, password: String) {
         let response = self
             .post("/login")
-            .json(&LoginRequest {
-                email: user.email.clone(),
-                password: user.password.clone(),
-            })
+            .json(&LoginRequest { email, password })
             .send()
             .await
             .unwrap();

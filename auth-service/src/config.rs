@@ -9,7 +9,7 @@ use crate::{postgres, service};
 pub const APP_NAME: &str = "auth-service";
 pub const AUTH_TOKEN_COOKIE_NAME: &str = "__Host-access_token";
 
-#[derive(Debug, Clone, Deserialize, Validate)]
+#[derive(Debug, Clone, Serialize, Deserialize, Validate)]
 pub struct AppConfig {
     pub env: AppEnv,
 
