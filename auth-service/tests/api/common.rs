@@ -21,9 +21,19 @@ use reqwest::StatusCode;
 
 use sqlx::Connection;
 
-static TEST_APP_COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 static JANITOR: std::sync::LazyLock<std::sync::RwLock<Janitor>> =
     std::sync::LazyLock::new(|| std::sync::RwLock::new(Janitor::new()));
+fn janitor() -> std::sync::RwLockReadGuard<'static, Janitor> {
+    JANITOR.read().unwrap()
+}
+fn janitor_mut() -> std::sync::RwLockWriteGuard<'static, Janitor> {
+    JANITOR.write().unwrap()
+}
+
+#[ctor::dtor]
+fn shutdown() {
+    janitor_mut().close();
+}
 
 pub struct TestApp {
     pub state: AppState,
@@ -36,8 +46,6 @@ pub struct TestApp {
 }
 impl TestApp {
     pub async fn new() -> Self {
-        TEST_APP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
-
         let mut config = config::AppConfig::load("APP").expect("Failed to load config");
 
         // Config overrides for test environment
@@ -46,10 +54,7 @@ impl TestApp {
         config.db.max_connections = 1;
         config.db.database = config.db.database + "-" + &uuid::Uuid::new_v4().to_string();
 
-        let ack = JANITOR
-            .read()
-            .unwrap()
-            .create_db(config.db.database.clone());
+        let ack = janitor().create_db(config.db.database.clone());
         ack.await.expect("Failed to create database");
 
         let pg_pool = config
@@ -224,14 +229,7 @@ impl Drop for TestApp {
         tokio::spawn(async move { pg_pool.close().await });
 
         // Drop database
-        JANITOR
-            .read()
-            .unwrap()
-            .drop_db(self.state.config.db.database.clone());
-
-        if TEST_APP_COUNTER.fetch_sub(1, std::sync::atomic::Ordering::AcqRel) == 1 {
-            JANITOR.write().unwrap().close();
-        }
+        janitor().drop_db(self.state.config.db.database.clone());
     }
 }
 
