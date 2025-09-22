@@ -28,7 +28,10 @@ impl RedisConfig {
         redis::Client::open(self.connection_url())?
             .get_multiplexed_async_connection()
             .await
-            .map(|conn| RedisClient { conn, namespace: self.namespace.clone() })
+            .map(|conn| RedisClient {
+                conn,
+                namespace: self.namespace.clone(),
+            })
     }
 }
 
