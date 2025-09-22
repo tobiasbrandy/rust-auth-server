@@ -27,14 +27,17 @@ use reqwest::StatusCode;
 use secrecy::ExposeSecret;
 use testcontainers_modules::testcontainers::{ImageExt, runners::AsyncRunner};
 
+type PostgresContainer = testcontainers_modules::testcontainers::core::ContainerAsync<
+    testcontainers_modules::postgres::Postgres,
+>;
 type RedisContainer = testcontainers_modules::testcontainers::core::ContainerAsync<
     testcontainers_modules::redis::Redis,
 >;
 
 struct TestCtx {
     pub config: config::AppConfig,
-    #[allow(dead_code)]
-    pub redis: RedisContainer,
+    pub _postgres: PostgresContainer,
+    pub _redis: RedisContainer,
     pub template_db: String,
     pub janitor: Janitor,
 }
@@ -44,8 +47,19 @@ impl TestCtx {
         let config = config::AppConfig::load_env("APP", config::AppEnv::Test)
             .expect("Failed to load config");
 
-        // Create janitor
-        let janitor = Janitor::new(4, std::time::Duration::from_secs(30), config.db.clone());
+        // Start postgres container
+        let postgres = {
+            let config = &config.db;
+            testcontainers_modules::postgres::Postgres::default()
+                .with_db_name(&config.database)
+                .with_user(&config.user)
+                .with_password(config.password.expose_secret())
+                .with_mapped_port(config.port, 5432.into())
+                .with_tag("17.6-alpine")
+                .start()
+                .await
+                .expect("Failed to start postgres container")
+        };
 
         // Start redis container
         let redis = {
@@ -65,6 +79,9 @@ impl TestCtx {
                 .await
                 .expect("Failed to start redis container")
         };
+
+        // Create janitor
+        let janitor = Janitor::new(4, std::time::Duration::from_secs(30), config.db.clone());
 
         // Create template database so we only run migrations once
         let template_db = {
@@ -100,24 +117,15 @@ impl TestCtx {
 
         Self {
             config,
-            redis,
+            _postgres: postgres,
+            _redis: redis,
             template_db,
             janitor,
         }
     }
 
     fn tests_shutdown(&mut self) {
-        // Drop template database
-        let template_db = self.template_db.clone();
-        self.janitor.async_drop_with_pool(|pool| async move {
-            sqlx::query(format!(r#"DROP DATABASE IF EXISTS "{template_db}" WITH (FORCE)"#).as_str())
-                .execute(&pool)
-                .await
-                .map(|_| println!("Dropped template database: {template_db}"))
-                .unwrap_or_else(|e| {
-                    eprintln!("Failed to drop template database {template_db}: {e}")
-                })
-        });
+        // Nothing to do :)
     }
 
     pub async fn get() -> Arc<Self> {
@@ -145,16 +153,14 @@ impl Drop for TestCtx {
 }
 
 pub struct TestApp {
-    ctx: Arc<TestCtx>,
+    _ctx: Arc<TestCtx>,
     pub state: AppState,
     pub address: String,
     pub url: reqwest::Url,
     pub cookies: Arc<reqwest_cookie_store::CookieStoreRwLock>,
     pub client: reqwest::Client,
-    #[allow(dead_code)]
-    pub pg_pool: sqlx::PgPool,
-    #[allow(dead_code)]
-    pub redis: auth_service::redis::RedisClient,
+    pub _pg_pool: sqlx::PgPool,
+    pub _redis: auth_service::redis::RedisClient,
     pub server: tokio::task::JoinHandle<Result<(), std::io::Error>>,
 }
 impl TestApp {
@@ -260,14 +266,14 @@ impl TestApp {
             .expect("Failed to build http client");
 
         Self {
-            ctx,
+            _ctx: ctx,
             state,
             address,
             url,
             cookies,
             client,
-            pg_pool,
-            redis,
+            _pg_pool: pg_pool,
+            _redis: redis,
             server,
         }
     }
@@ -276,16 +282,6 @@ impl Drop for TestApp {
     fn drop(&mut self) {
         // Abort server
         self.server.abort();
-
-        // Drop database
-        let db_name = self.state.config.db.database.clone();
-        self.ctx.janitor.async_drop_with_pool(|pool| async move {
-            sqlx::query(format!(r#"DROP DATABASE IF EXISTS "{db_name}" WITH (FORCE)"#).as_str())
-                .execute(&pool)
-                .await
-                .map(|_| println!("Dropped database: {db_name}"))
-                .unwrap_or_else(|e| eprintln!("Failed to drop database {db_name}: {e}"))
-        });
     }
 }
 
@@ -426,6 +422,7 @@ impl Janitor {
             .expect("Janitor: Failed to send job");
     }
 
+    #[allow(dead_code)]
     pub fn async_drop_with_pool<F, Fut>(&self, job: F)
     where
         F: FnOnce(sqlx::PgPool) -> Fut + Send + 'static,

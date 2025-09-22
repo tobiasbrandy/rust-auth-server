@@ -4,6 +4,7 @@
 user = "postgres"
 database = "postgres"
 password = "postgres"
+port = 5433
 max_connections = 1000
 
 [redis]

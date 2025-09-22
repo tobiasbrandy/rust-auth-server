@@ -33,7 +33,7 @@ argon2 = { version = "0.5.3", features = ["std"] }
 anyhow = { version = "1.0" }
 secrecy = { version = "0.10.3", features = ["serde"] }
 redis = { version = "0.32.5", features = ["tokio-comp"] }
-testcontainers-modules = { version = "0.13.0", features = ["redis"] }
+testcontainers-modules = { version = "0.13.0", features = ["postgres", "redis"] }
 
 # App service specific
 askama = { version = "0.14.0" }
