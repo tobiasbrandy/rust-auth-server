@@ -6,5 +6,9 @@ database = "postgres"
 password = "postgres"
 max_connections = 1000
 
+[redis]
+port = 6380
+password = "redis"
+
 [auth]
 jwt_secrets = { "1111111111" = "test-secret" }

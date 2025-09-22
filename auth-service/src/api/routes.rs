@@ -216,12 +216,12 @@ async fn logout(
     Authorized(token): Authorized<String>,
     State(state): State<AppState>,
     jar: CookieJar,
-) -> impl IntoResponse {
-    state.banned_token_store.add_token(token.to_string()).await;
+) -> Result<impl IntoResponse, AuthAPIError> {
+    state.banned_token_store.add_token(token.to_string()).await.context("Failed to add token")?;
 
     let jar = jar.remove(cookie::Cookie::build(config::AUTH_TOKEN_COOKIE_NAME).path("/"));
 
-    (StatusCode::OK, jar)
+    Ok((StatusCode::OK, jar))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Validate)]

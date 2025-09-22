@@ -42,7 +42,7 @@ pub async fn auth_middleware(
     .map(|claims| (claims, auth_token));
 
     // Make claims available to handlers
-    req.extensions_mut().insert(claims);
+    req.extensions_mut().insert(std::sync::Arc::new(claims));
 
     next.run(req).await
 }

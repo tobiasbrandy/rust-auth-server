@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use axum::{
     extract::{FromRequestParts, OptionalFromRequestParts},
     http::{StatusCode, request::Parts},
@@ -16,7 +18,8 @@ where
     async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Option<Self>, Self::Rejection> {
         Ok(parts
             .extensions
-            .remove::<Result<(Claims, String), AuthTokenValidationError>>()
+            .remove::<Arc<Result<(Claims, String), AuthTokenValidationError>>>()
+            .map(|arc| Arc::into_inner(arc).expect("auth: Failed to get claims"))
             .transpose()
             .map_err(|err| (StatusCode::UNAUTHORIZED, err.to_string()))?
             .map(Self::from))

@@ -1,5 +1,6 @@
 use std::{collections::HashMap, ops::Add};
 
+use anyhow::Context;
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
@@ -153,7 +154,7 @@ pub fn generate_auth_token(
     jsonwebtoken::encode(&config.header, &claims, &config.encoding_key)
 }
 
-#[derive(Debug, Clone, thiserror::Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum AuthTokenValidationError {
     #[error("Token is banned")]
     BannedToken,
@@ -163,6 +164,8 @@ pub enum AuthTokenValidationError {
     InvalidKid,
     #[error(transparent)]
     InvalidToken(#[from] jsonwebtoken::errors::Error),
+    #[error(transparent)]
+    UnexpectedError(#[from] anyhow::Error),
 }
 
 pub async fn validate_auth_token(
@@ -172,7 +175,10 @@ pub async fn validate_auth_token(
     app: &str,
 ) -> Result<Claims, AuthTokenValidationError> {
     // First check if token is banned
-    let is_banned = banned_tokens.contains_token(token).await;
+    let is_banned = banned_tokens
+        .contains_token(token)
+        .await
+        .context("auth: Failed to check if token is banned")?;
 
     if is_banned {
         return Err(AuthTokenValidationError::BannedToken);
@@ -411,7 +417,7 @@ mod tests {
         );
 
         // Ban the token
-        banned_token_store.add_token(token.clone()).await;
+        banned_token_store.add_token(token.clone()).await.unwrap();
 
         // Now verify token is rejected
         let result = validate_auth_token(&config, &banned_token_store, &token, app).await;

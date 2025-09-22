@@ -2,6 +2,7 @@ pub mod in_memory_2fa_code_store;
 pub mod in_memory_banned_token_store;
 pub mod in_memory_user_store;
 pub mod pg_user_store;
+pub mod redis_banned_user_store;
 
 use crate::models::{
     two_fa::{LoginAttemptId, TwoFACode},
@@ -35,11 +36,17 @@ pub trait UserStore: std::fmt::Debug + Send + Sync {
     async fn get_user_by_email(&self, email: &str) -> Result<User, UserStoreError>;
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum BannedTokenStoreError {
+    #[error(transparent)]
+    UnexpectedError(#[from] anyhow::Error),
+}
+
 #[async_trait]
 pub trait BannedTokenStore: std::fmt::Debug + Send + Sync {
-    async fn add_token(&self, token: String);
+    async fn add_token(&self, token: String) -> Result<(), BannedTokenStoreError>;
 
-    async fn contains_token(&self, token: &str) -> bool;
+    async fn contains_token(&self, token: &str) -> Result<bool, BannedTokenStoreError>;
 }
 
 #[derive(Debug, thiserror::Error)]

@@ -4,7 +4,7 @@ use config::Config;
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
-use crate::{postgres, service};
+use crate::{postgres, redis, service};
 
 pub const APP_NAME: &str = "auth-service";
 pub const AUTH_TOKEN_COOKIE_NAME: &str = "__Host-access_token";
@@ -19,6 +19,9 @@ pub struct AppConfig {
 
     #[validate(nested)]
     pub db: postgres::PgConfig,
+
+    #[validate(nested)]
+    pub redis: redis::RedisConfig,
 
     #[validate(nested)]
     pub auth: service::auth::AuthConfig,

@@ -10,5 +10,10 @@ port = 5432
 database = "rust_auth_db"
 max_connections = 10
 
+[redis]
+host = "localhost"
+port = 6379
+password = ""
+
 [auth]
 jwt_secrets = {}

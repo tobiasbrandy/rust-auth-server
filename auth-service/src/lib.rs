@@ -3,6 +3,7 @@ pub mod config;
 pub mod models;
 pub mod persistence;
 pub mod postgres;
+pub mod redis;
 pub mod service;
 
 use axum::{Router, serve::Serve};

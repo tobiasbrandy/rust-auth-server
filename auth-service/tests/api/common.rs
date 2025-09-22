@@ -4,59 +4,103 @@ use std::{
 };
 
 use auth_service::{
+    Application,
     api::{
         app_state::AppState,
         routes::{LoginRequest, SignupRequest},
-    }, config, models::{
+    },
+    config,
+    models::{
         two_fa::{LoginAttemptId, TwoFACode},
         user::User,
-    }, persistence::{
-        in_memory_2fa_code_store::InMemory2FACodeStore, in_memory_banned_token_store::InMemoryBannedTokenStore, pg_user_store::PgUserStore, TwoFACodeStoreError
-    }, postgres::PgConfig, service::email::mock_email_client::MockEmailClient, Application
+    },
+    persistence::{
+        BannedTokenStoreError, TwoFACodeStoreError, in_memory_2fa_code_store::InMemory2FACodeStore,
+        pg_user_store::PgUserStore, redis_banned_user_store::RedisBannedUserStore,
+    },
+    postgres::PgConfig,
+    service::email::mock_email_client::MockEmailClient,
 };
+
 use reqwest::StatusCode;
+
+use secrecy::ExposeSecret;
+use testcontainers_modules::testcontainers::{ImageExt, runners::AsyncRunner};
+
+type RedisContainer = testcontainers_modules::testcontainers::core::ContainerAsync<
+    testcontainers_modules::redis::Redis,
+>;
 
 struct TestCtx {
     pub config: config::AppConfig,
+    #[allow(dead_code)]
+    pub redis: RedisContainer,
     pub template_db: String,
     pub janitor: Janitor,
 }
 impl TestCtx {
     async fn tests_init() -> Self {
+        // Load config
         let config = config::AppConfig::load_env("APP", config::AppEnv::Test)
             .expect("Failed to load config");
 
+        // Create janitor
         let janitor = Janitor::new(4, std::time::Duration::from_secs(30), config.db.clone());
 
-        // Create template database so we only run migrations once
-        let template_db = config.db.database.clone() + "-template";
-        let mut template_config = config.db.clone();
-        template_config.database = template_db.clone();
-        janitor
-            .run_with_pool(|pool| async move {
-                // Don't fail, we assume it already exists
-                let _ = sqlx::query(
-                    format!(r#"CREATE DATABASE "{}""#, template_config.database).as_str(),
+        // Start redis container
+        let redis = {
+            let config = &config.redis;
+            testcontainers_modules::redis::Redis::default()
+                .with_tag("8.2-alpine")
+                .with_mapped_port(
+                    config.port,
+                    testcontainers_modules::redis::REDIS_PORT.into(),
                 )
-                .execute(&pool)
+                .with_cmd(vec![
+                    "redis-server",
+                    "--requirepass",
+                    config.password.expose_secret(),
+                ])
+                .start()
+                .await
+                .expect("Failed to start redis container")
+        };
+
+        // Create template database so we only run migrations once
+        let template_db = {
+            let template_db = config.db.database.clone() + "-template";
+            let mut template_config = config.db.clone();
+            template_config.database = template_db.clone();
+
+            janitor
+                .run_with_pool(|pool| async move {
+                    // Don't fail, we assume it already exists
+                    let _ = sqlx::query(
+                        format!(r#"CREATE DATABASE "{}""#, template_config.database).as_str(),
+                    )
+                    .execute(&pool)
+                    .await;
+
+                    let template_conn = template_config
+                        .build_pool()
+                        .await
+                        .expect("Failed to create Postgresql template connection");
+
+                    sqlx::migrate!()
+                        .run(&template_conn)
+                        .await
+                        .expect("Failed to run migrations");
+
+                    tokio::spawn(async move { template_conn.close().await });
+                })
                 .await;
 
-                let template_conn = template_config
-                    .build_pool()
-                    .await
-                    .expect("Failed to create Postgresql template connection");
-
-                sqlx::migrate!()
-                    .run(&template_conn)
-                    .await
-                    .expect("Failed to run migrations");
-
-                tokio::spawn(async move { template_conn.close().await });
-            })
-            .await;
+            template_db
+        };
 
         Self {
             config,
+            redis,
             template_db,
             janitor,
         }
@@ -109,6 +153,8 @@ pub struct TestApp {
     pub client: reqwest::Client,
     #[allow(dead_code)]
     pub pg_pool: sqlx::PgPool,
+    #[allow(dead_code)]
+    pub redis: auth_service::redis::RedisClient,
     pub server: tokio::task::JoinHandle<Result<(), std::io::Error>>,
 }
 impl TestApp {
@@ -120,34 +166,77 @@ impl TestApp {
         let mut config = ctx.config.clone();
         config.host = "127.0.0.1".to_string();
         config.port = 0;
+
         config.db.max_connections = 1;
         config.db.database = config.db.database + "-" + &test_id;
 
-        // Create database
-        let db_name = config.db.database.clone();
-        let template_db = ctx.template_db.clone();
-        ctx.janitor
-            .run_with_pool(|pool| async move {
-                sqlx::query(
-                    format!(r#"CREATE DATABASE "{db_name}" TEMPLATE "{template_db}""#,).as_str(),
-                )
-                .execute(&pool)
-                .await
-                .unwrap_or_else(|e| panic!("Failed to create database {db_name}: {e}"));
-            })
-            .await;
-        println!("Created database: {}", config.db.database);
+        config.redis.user = Some(test_id.clone());
+        config.redis.namespace = Some(test_id.clone());
 
-        let pg_pool = config
-            .db
-            .build_pool()
-            .await
-            .expect("Failed to create Postgresql pool");
+        // Connect to postgres
+        let pg_pool = {
+            // Create database
+            let db_name = config.db.database.clone();
+            let template_db = ctx.template_db.clone();
+            ctx.janitor
+                .run_with_pool(|pool| async move {
+                    sqlx::query(
+                        format!(r#"CREATE DATABASE "{db_name}" TEMPLATE "{template_db}""#,)
+                            .as_str(),
+                    )
+                    .execute(&pool)
+                    .await
+                    .unwrap_or_else(|e| panic!("Failed to create database {db_name}: {e}"));
+                })
+                .await;
+            println!("Created database: {}", config.db.database);
+
+            config
+                .db
+                .build_pool()
+                .await
+                .expect("Failed to create Postgresql pool")
+        };
+
+        // Connect to redis
+        let redis = {
+            let config = &mut config.redis;
+
+            let admin_client = {
+                let user = config.user.take();
+                let admin_client = config
+                    .build_client()
+                    .await
+                    .expect("Failed to build redis admin client");
+                config.user = user;
+                admin_client
+            };
+
+            // Enforce test isolation by setting a user which requires the namespace for the test
+            redis::cmd("ACL")
+                .arg("SETUSER")
+                .arg(config.user.as_ref().unwrap())
+                .arg("on")
+                .arg(format!(">{}", config.password.expose_secret()))
+                .arg("+@all")
+                .arg("-@dangerous")
+                .arg(format!("~{}:*", config.namespace.as_ref().unwrap())) // key pattern
+                .arg("resetchannels")
+                .arg(format!("&{}:*", config.namespace.as_ref().unwrap())) // pub/sub pattern
+                .query_async::<()>(&mut admin_client.conn())
+                .await
+                .expect("Failed to create redis user");
+
+            config
+                .build_client()
+                .await
+                .expect("Failed to build redis client")
+        };
 
         let state = AppState::new(
             config,
             PgUserStore::new(pg_pool.clone()),
-            InMemoryBannedTokenStore::default(),
+            RedisBannedUserStore::new(redis.clone()),
             InMemory2FACodeStore::default(),
             MockEmailClient,
         );
@@ -178,6 +267,7 @@ impl TestApp {
             cookies,
             client,
             pg_pool,
+            redis,
             server,
         }
     }
@@ -214,11 +304,7 @@ struct Janitor {
     handle: Option<std::thread::JoinHandle<()>>,
 }
 impl Janitor {
-    pub fn new(
-        threads: usize,
-        timeout: std::time::Duration,
-        pool_config: PgConfig,
-    ) -> Self {
+    pub fn new(threads: usize, timeout: std::time::Duration, pool_config: PgConfig) -> Self {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<JanitorJob>();
 
         let handle = std::thread::spawn(move || {
@@ -369,6 +455,7 @@ impl Drop for Janitor {
 }
 
 // --- TestApp Helpers --- //
+
 impl TestApp {
     // --- Client Helpers --- //
 
@@ -439,7 +526,7 @@ impl TestApp {
         self.state.two_fa_code_store.get_code(email).await
     }
 
-    pub async fn has_banned_token(&self, token: &str) -> bool {
+    pub async fn has_banned_token(&self, token: &str) -> Result<bool, BannedTokenStoreError> {
         self.state.banned_token_store.contains_token(token).await
     }
 
@@ -485,6 +572,6 @@ impl TestApp {
 
         assert!(!self.has_cookie("/", config::AUTH_TOKEN_COOKIE_NAME));
 
-        assert!(self.has_banned_token(&token).await);
+        assert!(self.has_banned_token(&token).await.unwrap());
     }
 }

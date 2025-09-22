@@ -7,7 +7,6 @@ use sqlx::{
 use validator::Validate;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Validate)]
-#[serde(default)]
 pub struct PgConfig {
     #[validate(length(min = 1))]
     pub user: String,
@@ -19,18 +18,6 @@ pub struct PgConfig {
     #[validate(length(min = 1))]
     pub database: String,
     pub max_connections: u32,
-}
-impl Default for PgConfig {
-    fn default() -> Self {
-        Self {
-            user: "postgres".to_string(),
-            password: "".into(),
-            host: "localhost".to_string(),
-            port: 5432,
-            database: "rust_auth_db".to_string(),
-            max_connections: 5,
-        }
-    }
 }
 impl PgConfig {
     const PROTOCOL: &'static str = "postgresql";

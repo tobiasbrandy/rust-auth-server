@@ -23,6 +23,8 @@ sqlx = { workspace = true }
 argon2 = { workspace = true }
 anyhow = { workspace = true }
 secrecy = { workspace = true }
+redis = { workspace = true }
+testcontainers-modules = { workspace = true }
 
 [dev-dependencies]
 reqwest = { workspace = true }

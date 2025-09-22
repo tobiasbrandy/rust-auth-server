@@ -274,7 +274,7 @@ async fn logout(#[future] app: TestApp) {
 
     let token = app.get_auth_token();
 
-    assert!(!app.has_banned_token(&token).await);
+    assert!(!app.has_banned_token(&token).await.unwrap());
 
     app.logout_user().await;
 
