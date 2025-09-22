@@ -2,6 +2,7 @@ pub mod in_memory_2fa_code_store;
 pub mod in_memory_banned_token_store;
 pub mod in_memory_user_store;
 pub mod pg_user_store;
+pub mod redis_2fa_code_store;
 pub mod redis_banned_user_store;
 
 use crate::models::{

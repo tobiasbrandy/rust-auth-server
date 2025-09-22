@@ -27,7 +27,7 @@ impl BannedTokenStore for RedisBannedUserStore {
             .set_options(
                 self.key(&token),
                 true,
-                SetOptions::default().with_expiration(SetExpiry::EX(60 * 60 * 24 * 30)),
+                SetOptions::default().with_expiration(SetExpiry::EX(10 * 60)),
             )
             .await
             .context("SET failed")?;

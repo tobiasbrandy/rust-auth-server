@@ -3,8 +3,8 @@ use auth_service::{
     api::app_state::AppState,
     config::AppConfig,
     persistence::{
-        in_memory_2fa_code_store::InMemory2FACodeStore,
-        in_memory_banned_token_store::InMemoryBannedTokenStore, pg_user_store::PgUserStore,
+        pg_user_store::PgUserStore, redis_2fa_code_store::Redis2FACodeStore,
+        redis_banned_user_store::RedisBannedUserStore,
     },
     service::email::mock_email_client::MockEmailClient,
 };
@@ -24,11 +24,17 @@ async fn main() {
         .await
         .expect("Failed to run migrations");
 
+    let redis = config
+        .redis
+        .build_client()
+        .await
+        .expect("Failed to create Redis client");
+
     let app_state = AppState::new(
         config,
-        PgUserStore::new(pg_pool),
-        InMemoryBannedTokenStore::default(),
-        InMemory2FACodeStore::default(),
+        PgUserStore::new(pg_pool.clone()),
+        RedisBannedUserStore::new(redis.clone()),
+        Redis2FACodeStore::new(redis.clone()),
         MockEmailClient,
     );
 

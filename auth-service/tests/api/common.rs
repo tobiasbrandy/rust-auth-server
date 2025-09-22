@@ -15,8 +15,8 @@ use auth_service::{
         user::User,
     },
     persistence::{
-        BannedTokenStoreError, TwoFACodeStoreError, in_memory_2fa_code_store::InMemory2FACodeStore,
-        pg_user_store::PgUserStore, redis_banned_user_store::RedisBannedUserStore,
+        BannedTokenStoreError, TwoFACodeStoreError, pg_user_store::PgUserStore,
+        redis_2fa_code_store::Redis2FACodeStore, redis_banned_user_store::RedisBannedUserStore,
     },
     postgres::PgConfig,
     service::email::mock_email_client::MockEmailClient,
@@ -243,7 +243,7 @@ impl TestApp {
             config,
             PgUserStore::new(pg_pool.clone()),
             RedisBannedUserStore::new(redis.clone()),
-            InMemory2FACodeStore::default(),
+            Redis2FACodeStore::new(redis.clone()),
             MockEmailClient,
         );
 
