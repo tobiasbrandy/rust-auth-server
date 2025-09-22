@@ -102,11 +102,7 @@ async fn signup_email_already_exists(#[future] app: TestApp) {
 async fn login(#[future] app: TestApp) {
     let password = "password123".to_string();
     let user = app
-        .create_user(
-            "test@example.com".to_string(),
-            password.clone(),
-            false,
-        )
+        .create_user("test@example.com".to_string(), password.clone(), false)
         .await;
 
     let response = app
@@ -129,11 +125,7 @@ async fn login(#[future] app: TestApp) {
 async fn login_2fa(#[future] app: TestApp) {
     let password = "password123".to_string();
     let user = app
-        .create_user(
-            "test@example.com".to_string(),
-            password.clone(),
-            true,
-        )
+        .create_user("test@example.com".to_string(), password.clone(), true)
         .await;
 
     let response = app
@@ -234,11 +226,7 @@ async fn login_password_is_incorrect(#[future] app: TestApp) {
 async fn verify_2fa(#[future] app: TestApp) {
     let password = "password123".to_string();
     let user = app
-        .create_user(
-            "twofa@example.com".to_string(),
-            password.clone(),
-            true,
-        )
+        .create_user("twofa@example.com".to_string(), password.clone(), true)
         .await;
 
     let response = app
@@ -279,11 +267,7 @@ async fn logout(#[future] app: TestApp) {
     let password = "password123".to_string();
 
     let user = app
-        .create_user(
-            "test@example.com".to_string(),
-            password.clone(),
-            false,
-        )
+        .create_user("test@example.com".to_string(), password.clone(), false)
         .await;
 
     app.login_user(user.email, password).await;
@@ -324,11 +308,7 @@ async fn logout_invalid_jwt(#[future] app: TestApp) {
 async fn me_with_valid_cookie(#[future] app: TestApp) {
     let password = "password123".to_string();
     let user = app
-        .create_user(
-            "test@example.com".to_string(),
-            password.clone(),
-            false,
-        )
+        .create_user("test@example.com".to_string(), password.clone(), false)
         .await;
 
     app.login_user(user.email.clone(), password).await;
@@ -346,11 +326,7 @@ async fn me_with_valid_cookie(#[future] app: TestApp) {
 async fn me_with_valid_authorization_header(#[future] app: TestApp) {
     let password = "password123".to_string();
     let user = app
-        .create_user(
-            "test@example.com".to_string(),
-            password.clone(),
-            false,
-        )
+        .create_user("test@example.com".to_string(), password.clone(), false)
         .await;
 
     app.login_user(user.email.clone(), password).await;
@@ -402,11 +378,7 @@ async fn me_invalid_token(#[future] app: TestApp) {
 async fn verify_token(#[future] app: TestApp) {
     let password = "password123".to_string();
     let user = app
-        .create_user(
-            "test@example.com".to_string(),
-            password.clone(),
-            false,
-        )
+        .create_user("test@example.com".to_string(), password.clone(), false)
         .await;
 
     app.login_user(user.email.clone(), password).await;
@@ -457,11 +429,7 @@ async fn verify_token_invalid_token(#[future] app: TestApp) {
 async fn should_return_401_if_banned_token(#[future] app: TestApp) {
     let password = "password123".to_string();
     let user = app
-        .create_user(
-            "test@example.com".to_string(),
-            password.clone(),
-            false,
-        )
+        .create_user("test@example.com".to_string(), password.clone(), false)
         .await;
 
     app.login_user(user.email.clone(), password).await;

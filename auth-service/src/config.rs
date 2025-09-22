@@ -24,17 +24,20 @@ pub struct AppConfig {
     pub auth: service::auth::AuthConfig,
 }
 impl AppConfig {
-    pub fn load(env_prefix: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        load_config(env_prefix)
+    pub fn load(env_prefix: &str) -> Result<Self, anyhow::Error> {
+        load_config(env_prefix, AppEnv::detect(env_prefix))
+    }
+
+    pub fn load_env(env_prefix: &str, env: AppEnv) -> Result<Self, anyhow::Error> {
+        load_config(env_prefix, env)
     }
 }
 
 // Could be a separate module/crate
 pub fn load_config<'de, T: Deserialize<'de> + Validate>(
-    env_prexif: &str,
-) -> Result<T, Box<dyn std::error::Error>> {
-    let env = AppEnv::detect(env_prexif);
-
+    env_prefix: &str,
+    env: AppEnv,
+) -> Result<T, anyhow::Error> {
     let env_vars = {
         let mut env_vars = std::env::vars().collect::<HashMap<_, _>>();
 
@@ -45,7 +48,7 @@ pub fn load_config<'de, T: Deserialize<'de> + Validate>(
             env_vars.extend(env_overrides);
         }
 
-        env_vars.insert(format!("{env_prexif}_ENV"), env.to_string());
+        env_vars.insert(format!("{env_prefix}_ENV"), env.to_string());
 
         env_vars
     };
@@ -55,7 +58,7 @@ pub fn load_config<'de, T: Deserialize<'de> + Validate>(
         .add_source(config::File::with_name(&format!("config/{env}")).required(false))
         .add_source(config::File::with_name("config/local").required(false))
         .add_source(
-            config::Environment::with_prefix(env_prexif)
+            config::Environment::with_prefix(env_prefix)
                 .prefix_separator("_")
                 .separator("__")
                 .source(Some(env_vars)),

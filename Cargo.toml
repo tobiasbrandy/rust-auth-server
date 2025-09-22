@@ -32,7 +32,6 @@ sqlx = { version = "0.8.6", features = [
 argon2 = { version = "0.5.3", features = ["std"] }
 anyhow = { version = "1.0" }
 secrecy = { version = "0.10.3", features = ["serde"] }
-ctor = { version = "0.5.0" }
 
 # App service specific
 askama = { version = "0.14.0" }

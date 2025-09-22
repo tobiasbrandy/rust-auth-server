@@ -138,10 +138,12 @@ async fn login(
         .await
         .map_err(|_| AuthAPIError::IncorrectCredentials)?;
 
-    tokio::task::spawn_blocking(move || auth::verify_password(user.password.expose_secret(), &body.password))
-        .await
-        .context("Failed to verify password")?
-        .map_err(|_| AuthAPIError::IncorrectCredentials)?;
+    tokio::task::spawn_blocking(move || {
+        auth::verify_password(user.password.expose_secret(), &body.password)
+    })
+    .await
+    .context("Failed to verify password")?
+    .map_err(|_| AuthAPIError::IncorrectCredentials)?;
 
     if user.requires_2fa {
         let login_attempt_id = LoginAttemptId::new();
